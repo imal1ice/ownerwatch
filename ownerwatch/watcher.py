@@ -73,6 +73,18 @@ class Watcher:
         return n
 
     def _scan(self, from_block: int, to_block: int) -> int:
+        """Scan a range; if the RPC rejects it (range too wide, too many
+        results), split in half and retry down to single blocks."""
+        try:
+            return self._scan_range(from_block, to_block)
+        except Exception as e:  # noqa: BLE001
+            if from_block == to_block:
+                raise
+            mid = (from_block + to_block) // 2
+            log.info("rpc rejected blocks %d-%d (%s); splitting", from_block, to_block, type(e).__name__)
+            return self._scan(from_block, mid) + self._scan(mid + 1, to_block)
+
+    def _scan_range(self, from_block: int, to_block: int) -> int:
         n = 0
         if self.admin_addresses:
             logs = self.w3.eth.get_logs({
