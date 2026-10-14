@@ -49,6 +49,7 @@ class SafeQueueWatcher:
         self.session = session or requests.Session()
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.state: dict[str, SafeState] = {t.address: SafeState() for t in targets}
+        self.last_poll_ok = False
 
     # ---- persistence helpers ------------------------------------------------------
     def export_state(self) -> dict:
@@ -63,7 +64,7 @@ class SafeQueueWatcher:
     def _get(self, url: str, **params) -> dict:
         import time
         for attempt in range(4):
-            r = self.session.get(url, params=params, headers=self.headers, timeout=15)
+            r = self.session.get(url, params=params or None, headers=self.headers, timeout=15)
             if r.status_code == 429 and attempt < 3:
                 time.sleep(2 ** attempt)
                 continue
@@ -73,22 +74,39 @@ class SafeQueueWatcher:
 
     def poll(self, first_run: bool = False) -> list[Alert]:
         alerts: list[Alert] = []
+        ok = True
         for t in self.targets:
             try:
                 alerts += self._poll_safe(t, first_run)
             except Exception as e:  # noqa: BLE001
+                ok = False
                 log.warning("safe queue poll failed for %s: %s", t.label, e)
+        self.last_poll_ok = ok
         return alerts
+
+    def _pending(self, base: str, address: str) -> list[dict]:
+        """All unexecuted transactions, following pagination (bounded)."""
+        url = f"{base}/safes/{address}/multisig-transactions/"
+        params = {"executed": "false", "limit": 100}
+        out: list[dict] = []
+        for _ in range(10):
+            page = self._get(url, **params) if params else self._get(url)
+            out += page.get("results", [])
+            nxt = page.get("next")
+            if not nxt:
+                break
+            url, params = nxt, None
+        return out
 
     def _poll_safe(self, t: SafeTarget, first_run: bool) -> list[Alert]:
         base = BASE.format(chain=t.chain)
         info = self._get(f"{base}/safes/{t.address}/")
         threshold = int(info.get("threshold", 0))
-        pending = self._get(f"{base}/safes/{t.address}/multisig-transactions/", executed="false", limit=50)
+        pending = self._pending(base, t.address)
         st = self.state[t.address]
         out: list[Alert] = []
         live = set()
-        for tx in pending.get("results", []):
+        for tx in pending:
             h = tx["safeTxHash"]
             live.add(h)
             confs = len(tx.get("confirmations") or [])

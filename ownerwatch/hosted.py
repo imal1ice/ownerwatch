@@ -44,14 +44,17 @@ class Customer:
         self.stop.clear()
         self.mtime = self.path.stat().st_mtime
         cfgs = load_all(self.path)
-        if self.max_chains and len(cfgs) > self.max_chains:
+        if len(cfgs) > self.max_chains:
             log.warning("%s paid for %d chains but config has %d; running the first %d",
                         self.address, self.max_chains, len(cfgs), self.max_chains)
             cfgs = cfgs[: self.max_chains]
+        # build every watcher before starting any thread, so a bad chain leaves nothing running
+        watchers = []
         for cfg in cfgs:
             cfg.state_file = str(Path("state") / "hosted" / self.address / f"{cfg.chain_name}.json")
-            w = Watcher(cfg, Dispatcher(cfg.alerts))
-            t = threading.Thread(target=self._loop, args=(w,), name=f"{self.address[:8]}-{cfg.chain_name}", daemon=True)
+            watchers.append(Watcher(cfg, Dispatcher(cfg.alerts)))
+        for w in watchers:
+            t = threading.Thread(target=self._loop, args=(w,), name=f"{self.address[:8]}-{w.cfg.chain_name}", daemon=True)
             t.start()
             self.threads.append(t)
         log.info("started %s (%d chains)", self.address, len(cfgs))
@@ -64,12 +67,16 @@ class Customer:
                 log.warning("%s poll failed: %s", w.cfg.chain_name, e)
             self.stop.wait(w.cfg.poll_interval_seconds)
 
-    def halt(self) -> None:
+    def halt(self) -> bool:
+        """Stop all threads. Returns False if one is still inside an RPC call after
+        the grace period; the caller must not start a replacement until it is gone."""
         self.stop.set()
         for t in self.threads:
-            t.join(timeout=5)
-        self.threads = []
-        log.info("stopped %s", self.address)
+            t.join(timeout=65)
+        alive = [t for t in self.threads if t.is_alive()]
+        self.threads = alive
+        log.info("stopped %s%s", self.address, " (thread still finishing)" if alive else "")
+        return not alive
 
     def changed(self) -> bool:
         return self.path.exists() and self.path.stat().st_mtime != self.mtime
@@ -86,11 +93,13 @@ class HostedRunner:
     def is_active(self, address: str) -> bool:
         return bool(self.subs.functions.isActive(address).call())
 
-    def paid_chains(self, address: str) -> int:
+    def paid_chains(self, address: str) -> int | None:
+        """None when the contract can't be read; the caller then leaves the customer untouched."""
         try:
             return int(self.subs.functions.chainCount(address).call())
-        except Exception:  # noqa: BLE001
-            return 0
+        except Exception as e:  # noqa: BLE001
+            log.warning("chainCount(%s) failed: %s", address, e)
+            return None
 
     def reconcile(self) -> None:
         files = {}
@@ -107,19 +116,28 @@ class HostedRunner:
                 continue
             cust = self.customers.get(addr)
             if active and cust is None:
-                cust = Customer(addr, path, self.paid_chains(addr))
+                paid = self.paid_chains(addr)
+                if not paid:
+                    continue
+                cust = Customer(addr, path, paid)
                 try:
                     cust.start()
                     self.customers[addr] = cust
                 except Exception as e:  # noqa: BLE001
                     log.error("config for %s is invalid: %s", addr, e)
-            elif active and cust is not None and cust.changed():
-                cust.halt()
-                try:
-                    cust.start()
-                except Exception as e:  # noqa: BLE001
-                    log.error("reloaded config for %s is invalid: %s", addr, e)
-                    del self.customers[addr]
+            elif active and cust is not None:
+                paid = self.paid_chains(addr)
+                if paid is None:
+                    continue
+                if cust.changed() or paid != cust.max_chains:
+                    if not cust.halt():
+                        continue   # try again next interval
+                    cust.max_chains = paid
+                    try:
+                        cust.start()
+                    except Exception as e:  # noqa: BLE001
+                        log.error("reloaded config for %s is invalid: %s", addr, e)
+                        del self.customers[addr]
             elif not active and cust is not None:
                 log.info("subscription for %s lapsed", addr)
                 cust.halt()

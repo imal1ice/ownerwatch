@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import yaml
 from web3 import Web3
 
-from .events import topic0
+from .events import _norm, topic0
 
 IMPL_SLOT = int("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", 16)
 ADMIN_SLOT = int("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103", 16)
@@ -165,8 +165,8 @@ class Prober:
         """Replay RoleGranted/RoleRevoked logs to list current holders per role.
         Needs an RPC that serves historical logs; wide ranges are split on error."""
         addr = Web3.to_checksum_address(addr)
-        granted, revoked = "0x" + Web3.keccak(text="RoleGranted(bytes32,address,address)").hex().lstrip("0x"), \
-            "0x" + Web3.keccak(text="RoleRevoked(bytes32,address,address)").hex().lstrip("0x")
+        granted = _norm(topic0("RoleGranted(bytes32,address,address)"))
+        revoked = _norm(topic0("RoleRevoked(bytes32,address,address)"))
         logs = self._get_logs_split({"address": addr, "topics": [[granted, revoked]]}, from_block, self.w3.eth.block_number)
         logs.sort(key=lambda l: (l["blockNumber"], l["logIndex"]))
         names = {("0x" + bytes(v).hex()): k for k, v in ROLES.items()}

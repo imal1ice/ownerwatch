@@ -174,12 +174,14 @@ def test_governor_and_aragon(anvil, artifacts, tmp_path):
                  state_file=str(tmp_path / "c.json"), contracts=[Contract(gov.address, "Gov")], alerts=Alerts())
     got: list = []
     w = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    gov.functions.propose("\n   \n").transact({"from": deployer})   # whitespace-only description must not stall
     gov.functions.propose("# Raise fee switch\nlong body").transact({"from": deployer})
     gov.functions.setDelay(7200).transact({"from": deployer})
     w3.eth.wait_for_transaction_receipt(gov.functions.setApp(deployer).transact({"from": deployer}))
-    assert w.poll_once() == 3
+    assert w.poll_once() == 4
+    titles = [a.message for a in got if a.event == "ProposalCreated"]
+    assert any("(no description)" in t for t in titles) and any("2 targets: # Raise fee switch" in t for t in titles)
     by = {a.event: a for a in got}
-    assert "proposal 42 created" in by["ProposalCreated"].message and "2 targets: # Raise fee switch" in by["ProposalCreated"].message
     assert by["VotingDelaySet"].severity == "critical" and "1 -> 7200" in by["VotingDelaySet"].message
     assert by["SetApp"].source == "AragonOS" and deployer in by["SetApp"].message
 

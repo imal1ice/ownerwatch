@@ -106,7 +106,8 @@ class Watcher:
         if not self.safe_queue:
             return 0
         alerts = self.safe_queue.poll(first_run=self._safe_first_run)
-        self._safe_first_run = False
+        if self.safe_queue.last_poll_ok:
+            self._safe_first_run = False
         for a in alerts:
             self.dispatcher.send(a)
         self.cursor.safes = self.safe_queue.export_state()
@@ -130,60 +131,64 @@ class Watcher:
             self.cursor.save()
         return n
 
-    def _scan(self, from_block: int, to_block: int) -> int:
-        """Scan a range; if the RPC rejects it (range too wide, too many
-        results), split in half and retry down to single blocks."""
+    def _logs(self, params: dict, from_block: int, to_block: int, budget: list[int] | None = None) -> list:
+        """eth_getLogs with bisection when the RPC rejects the range. A request
+        budget stops a dead RPC from turning one chunk into thousands of calls."""
+        budget = budget if budget is not None else [64]
+        budget[0] -= 1
+        if budget[0] < 0:
+            raise RuntimeError(f"eth_getLogs request budget exhausted around blocks {from_block}-{to_block}")
         try:
-            return self._scan_range(from_block, to_block)
+            return self.w3.eth.get_logs({**params, "fromBlock": from_block, "toBlock": to_block})
         except Exception as e:  # noqa: BLE001
             if from_block == to_block:
                 raise
             mid = (from_block + to_block) // 2
             log.info("rpc rejected blocks %d-%d (%s); splitting", from_block, to_block, type(e).__name__)
-            return self._scan(from_block, mid) + self._scan(mid + 1, to_block)
+            return self._logs(params, from_block, mid, budget) + self._logs(params, mid + 1, to_block, budget)
 
-    def _scan_range(self, from_block: int, to_block: int) -> int:
-        n = 0
+    def _scan(self, from_block: int, to_block: int) -> int:
+        """Fetch every log for the range first, then dispatch, so a failure in
+        one query can never re-send alerts from another."""
+        alerts: list[Alert] = []
         if self.admin_addresses:
-            logs = self.w3.eth.get_logs({
-                "fromBlock": from_block, "toBlock": to_block,
-                "address": self.admin_addresses, "topics": [ADMIN_TOPICS]})
-            for lg in logs:
-                alert = self._decode_admin(lg)
-                if alert:
-                    self.dispatcher.send(alert)
-                    n += 1
+            for lg in self._logs({"address": self.admin_addresses, "topics": [ADMIN_TOPICS]}, from_block, to_block):
+                a = self._decode_admin(lg)
+                if a:
+                    alerts.append(a)
         if self._tokens:
             treasuries = sorted({a for m in self._tokens.values() for a in m})
             padded = ["0x" + "00" * 12 + a[2:].lower() for a in treasuries]
-            logs = self.w3.eth.get_logs({
-                "fromBlock": from_block, "toBlock": to_block,
-                "address": list(self._tokens.keys()), "topics": [TRANSFER_TOPIC, padded]})
-            for lg in logs:
-                alert = self._decode_transfer(lg)
-                if alert:
-                    self.dispatcher.send(alert)
-                    n += 1
+            for lg in self._logs({"address": list(self._tokens.keys()), "topics": [TRANSFER_TOPIC, padded]}, from_block, to_block):
+                a = self._decode_transfer(lg)
+                if a:
+                    alerts.append(a)
         if self._nfts:
             treasuries = sorted({a for m in self._nfts.values() for a in m})
             padded = ["0x" + "00" * 12 + a[2:].lower() for a in treasuries]
             nft_addrs = list(self._nfts.keys())
-            logs = self.w3.eth.get_logs({"fromBlock": from_block, "toBlock": to_block,
-                                         "address": nft_addrs, "topics": [TRANSFER_TOPIC, padded]})
-            logs += self.w3.eth.get_logs({"fromBlock": from_block, "toBlock": to_block,
-                                          "address": nft_addrs, "topics": [ERC1155_TOPICS, None, padded]})
+            logs = self._logs({"address": nft_addrs, "topics": [TRANSFER_TOPIC, padded]}, from_block, to_block)
+            logs += self._logs({"address": nft_addrs, "topics": [ERC1155_TOPICS, None, padded]}, from_block, to_block)
             for lg in logs:
-                alert = self._decode_nft(lg)
-                if alert:
-                    self.dispatcher.send(alert)
-                    n += 1
-        return n
+                a = self._decode_nft(lg)
+                if a:
+                    alerts.append(a)
+        for a in alerts:
+            self.dispatcher.send(a)
+        return len(alerts)
 
     # ---- decoding -----------------------------------------------------------------
     def _link(self, tx_hash: str) -> str:
         return f"{self.cfg.explorer_url.rstrip('/')}/tx/{tx_hash}" if self.cfg.explorer_url and tx_hash.startswith("0x") else tx_hash
 
     def _decode_admin(self, lg) -> Alert | None:
+        try:
+            return self._decode_admin_inner(lg)
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not decode log in tx %s: %s", _hex(lg.get("transactionHash", b"")), e)
+            return None
+
+    def _decode_admin_inner(self, lg) -> Alert | None:
         t0 = _hex(lg["topics"][0])
         spec = BY_TOPIC.get(t0)
         if not spec:
@@ -197,7 +202,8 @@ class Watcher:
         addr = Web3.to_checksum_address(lg["address"])
         if spec.name == "ProposalCreated":
             args["ntargets"] = len(args.get("targets") or [])
-            args["title"] = (args.get("description") or "").strip().splitlines()[0][:120] if args.get("description") else "(no description)"
+            lines = [ln.strip() for ln in str(args.get("description") or "").splitlines() if ln.strip()]
+            args["title"] = lines[0][:120] if lines else "(no description)"
         msg = spec.describe.format(**args)
         if spec.name in ("CallScheduled", "CallExecuted"):
             msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'))}"

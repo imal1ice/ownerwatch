@@ -21,7 +21,7 @@ class FakeSession:
 
     def get(self, url, params=None, headers=None, timeout=None):
         if url.endswith("/multisig-transactions/"):
-            return FakeResp({"results": self.pending})
+            return FakeResp({"results": self.pending, "next": None})
         return FakeResp({"threshold": self.threshold, "owners": ["0xa", "0xb", "0xc"]})
 
 
@@ -61,3 +61,44 @@ def test_queue_lifecycle(monkeypatch):
     sess.pending = [_tx("0xh1", 1)]
     assert w2.poll() == []
     assert "0xh2" not in w2.state["0x" + "ff" * 20].seen
+
+
+def test_first_run_suppression_survives_failed_poll(monkeypatch):
+    import ownerwatch.safe as mod
+    monkeypatch.setattr(mod, "describe_call", lambda d, *a: "x")
+
+    class Flaky(FakeSession):
+        def __init__(self):
+            super().__init__()
+            self.fail = True
+
+        def get(self, url, params=None, headers=None, timeout=None):
+            if self.fail:
+                raise RuntimeError("503")
+            return super().get(url, params, headers, timeout)
+
+    sess = Flaky()
+    sess.pending = [_tx("0xold", 1)]
+    w = SafeQueueWatcher([SafeTarget("0x" + "ff" * 20, "S", "eth")], "ethereum", session=sess)
+    assert w.poll(first_run=True) == [] and w.last_poll_ok is False
+    sess.fail = False
+    # the watcher keeps first_run=True until a poll succeeds, so the old tx is still silent
+    assert w.poll(first_run=True) == [] and w.last_poll_ok is True
+    assert w.poll(first_run=False) == []
+
+
+def test_pagination(monkeypatch):
+    import ownerwatch.safe as mod
+    monkeypatch.setattr(mod, "describe_call", lambda d, *a: "x")
+
+    class Paged(FakeSession):
+        def get(self, url, params=None, headers=None, timeout=None):
+            if "page2" in url:
+                return FakeResp({"results": [_tx("0xp2", 1)], "next": None})
+            if url.endswith("/multisig-transactions/"):
+                return FakeResp({"results": [_tx("0xp1", 1)], "next": url + "?page2"})
+            return FakeResp({"threshold": 2})
+
+    w = SafeQueueWatcher([SafeTarget("0x" + "ff" * 20, "S", "eth")], "ethereum", session=Paged())
+    w.poll(first_run=True)
+    assert set(w.state["0x" + "ff" * 20].seen) == {"0xp1", "0xp2"}

@@ -108,7 +108,13 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "backfill":
         if len(cfgs) > 1 and not a.chain:
             p.error("--chain is required for a multi-chain config")
-        cfg = next((c for c in cfgs if c.chain_name == a.chain), cfgs[0])
+        if a.chain:
+            matches = [c for c in cfgs if c.chain_name == a.chain]
+            if not matches:
+                p.error(f"no chain named {a.chain!r} in config (have: {', '.join(c.chain_name for c in cfgs)})")
+            cfg = matches[0]
+        else:
+            cfg = cfgs[0]
         w = Watcher(cfg, Dispatcher(cfg.alerts))
         n, start = 0, a.from_block
         while start <= a.to_block:
