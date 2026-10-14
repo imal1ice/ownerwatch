@@ -40,8 +40,8 @@ def test_hosted_lifecycle(anvil, tmp_path):  # noqa: F811
     runner.reconcile()
     assert cust not in runner.customers          # not subscribed yet
 
-    usdc.functions.mint(cust, 10**9).transact({"from": op})
-    usdc.functions.approve(subs.address, 10**9).transact({"from": cust})
+    w3.eth.wait_for_transaction_receipt(usdc.functions.mint(cust, 10**9).transact({"from": op}))
+    w3.eth.wait_for_transaction_receipt(usdc.functions.approve(subs.address, 10**9).transact({"from": cust}))
     w3.eth.wait_for_transaction_receipt(subs.functions.subscribe(1, b"\x00" * 32).transact({"from": cust}))
     runner.reconcile()
     assert cust in runner.customers and runner.customers[cust].threads[0].is_alive()
