@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fix: a Safe added to an existing config had its whole pending backlog alerted as new; seeding is now per Safe
 - `daily_digest`: once-a-day summary of alerts by severity, so quiet and alive are distinguishable in the channel
 
 ## 0.7.0

@@ -102,3 +102,24 @@ def test_pagination(monkeypatch):
     w = SafeQueueWatcher([SafeTarget("0x" + "ff" * 20, "S", "eth")], "ethereum", session=Paged())
     w.poll(first_run=True)
     assert set(w.state["0x" + "ff" * 20].seen) == {"0xp1", "0xp2"}
+
+
+def test_safe_added_later_is_seeded_silently(monkeypatch):
+    import ownerwatch.safe as mod
+    monkeypatch.setattr(mod, "describe_call", lambda d, *a: "x")
+    sess = FakeSession()
+    sess.pending = [_tx("0xold1", 1), _tx("0xold2", 1)]
+    a, b = "0x" + "aa" * 20, "0x" + "bb" * 20
+    w1 = SafeQueueWatcher([SafeTarget(a, "A", "eth")], "ethereum", session=sess)
+    w1.poll(first_run=True)
+    exported = w1.export_state()           # only A is in the state file
+    w2 = SafeQueueWatcher([SafeTarget(a, "A", "eth"), SafeTarget(b, "B", "eth")], "ethereum", session=sess)
+    w2.import_state(exported)
+    assert w2.poll(first_run=False) == []  # B's backlog is recorded, not alerted
+    sess.pending = [_tx("0xold1", 1), _tx("0xold2", 1), _tx("0xnew", 1)]
+    alerts = w2.poll()
+    assert [(x.label, x.event) for x in alerts] == [("A", "SafeTxProposed"), ("B", "SafeTxProposed")]
+    # legacy state without the seeded flag is treated as seeded
+    w3 = SafeQueueWatcher([SafeTarget(a, "A", "eth")], "ethereum", session=sess)
+    w3.import_state({a: {"seen": {"0xold1": 1}, "ready": []}})
+    assert w3.state[a].seeded is True

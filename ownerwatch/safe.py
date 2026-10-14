@@ -35,6 +35,7 @@ class SafeTarget:
 class SafeState:
     seen: dict[str, int] = field(default_factory=dict)       # safeTxHash -> confirmations seen
     ready: set[str] = field(default_factory=set)             # hashes already reported as executable
+    seeded: bool = False                                     # True once the existing queue has been recorded silently
 
 
 class SafeQueueWatcher:
@@ -53,12 +54,14 @@ class SafeQueueWatcher:
 
     # ---- persistence helpers ------------------------------------------------------
     def export_state(self) -> dict:
-        return {a: {"seen": s.seen, "ready": sorted(s.ready)} for a, s in self.state.items()}
+        return {a: {"seen": s.seen, "ready": sorted(s.ready), "seeded": s.seeded} for a, s in self.state.items()}
 
     def import_state(self, d: dict) -> None:
         for a, s in (d or {}).items():
             if a in self.state:
-                self.state[a] = SafeState(seen=dict(s.get("seen", {})), ready=set(s.get("ready", [])))
+                # state written before `seeded` existed counts as seeded: it was recorded by an earlier first run
+                self.state[a] = SafeState(seen=dict(s.get("seen", {})), ready=set(s.get("ready", [])),
+                                          seeded=bool(s.get("seeded", True)))
 
     # ---- polling --------------------------------------------------------------------
     def _get(self, url: str, **params) -> dict:
@@ -104,6 +107,7 @@ class SafeQueueWatcher:
         threshold = int(info.get("threshold", 0))
         pending = self._pending(base, t.address)
         st = self.state[t.address]
+        first_run = first_run or not st.seeded    # a Safe new to this config is seeded silently, whatever the others did
         out: list[Alert] = []
         live = set()
         for tx in pending:
@@ -133,4 +137,5 @@ class SafeQueueWatcher:
             if h not in live:
                 st.seen.pop(h, None)
                 st.ready.discard(h)
+        st.seeded = True
         return out
