@@ -1,0 +1,37 @@
+# ownerwatch configuration. Copy to config.yaml and edit.
+
+rpc_url: "https://ethereum-rpc.publicnode.com"   # any JSON-RPC endpoint
+chain_name: "ethereum"
+
+poll_interval_seconds: 15
+confirmations: 2          # wait this many blocks before reporting, to ride out small reorgs
+max_block_range: 2000     # max blocks per eth_getLogs call; lower it for public RPCs
+start_block: latest       # block number, or "latest" to start from now
+state_file: "state/cursor.json"
+
+# Contracts to watch. Every address gets the full catalog of admin events:
+# Ownable, Ownable2Step, AccessControl, ERC-1967 proxies, Pausable,
+# TimelockController and Safe (owner / threshold / module / guard changes).
+contracts:
+  - address: "0x0000000000000000000000000000000000000000"
+    label: "ExampleProtocol Timelock"
+  - address: "0x0000000000000000000000000000000000000001"
+    label: "ExampleProtocol Proxy"
+
+# Optional: alert on large ERC-20 transfers OUT of these addresses.
+treasuries:
+  - address: "0x0000000000000000000000000000000000000002"
+    label: "ExampleProtocol Treasury"
+    tokens:
+      - address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"   # USDC
+        symbol: "USDC"
+        decimals: 6
+        min_amount: 100000        # alert if >= 100k USDC leaves in one transfer
+
+# Where alerts go. Any combination; stdout is always on.
+alerts:
+  discord_webhook: ""            # https://discord.com/api/webhooks/...
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+  webhook_url: ""                # generic JSON POST
+  min_severity: "info"           # info | medium | high | critical

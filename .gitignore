@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+state/
+config.yaml
+tests/fixtures/out/
+tests/fixtures/cache/
+.pytest_cache/

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ownerwatch"
+version = "0.1.0"
+description = "Self-hosted monitor that alerts when admin keys, roles, proxies, pausers or treasuries of EVM contracts change."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = ["web3>=7", "pyyaml>=6", "requests>=2.31"]
+
+[project.scripts]
+ownerwatch = "ownerwatch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ownerwatch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
