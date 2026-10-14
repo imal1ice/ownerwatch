@@ -122,6 +122,70 @@ CATALOG: list[EventSpec] = [
         _abi("CancelTransaction", _inp("txHash", "bytes32", True), _inp("target", "address", True), _inp("value", "uint256", False),
              _inp("signature", "string", False), _inp("data", "bytes", False), _inp("eta", "uint256", False)),
         "medium", "timelock tx cancelled: target {target} sig '{signature}'", "Timelock(legacy)"),
+    # OpenZeppelin Governor and Compound GovernorBravo (shared signatures)
+    EventSpec(
+        "ProposalCreated", "ProposalCreated(uint256,address,address[],uint256[],string[],bytes[],uint256,uint256,string)",
+        _abi("ProposalCreated", _inp("proposalId", "uint256", False), _inp("proposer", "address", False), _inp("targets", "address[]", False),
+             _inp("values", "uint256[]", False), _inp("signatures", "string[]", False), _inp("calldatas", "bytes[]", False),
+             _inp("voteStart", "uint256", False), _inp("voteEnd", "uint256", False), _inp("description", "string", False)),
+        "medium", "proposal {proposalId} created by {proposer} with {ntargets} targets: {title}", "Governor"),
+    EventSpec(
+        "ProposalQueued", "ProposalQueued(uint256,uint256)",
+        _abi("ProposalQueued", _inp("proposalId", "uint256", False), _inp("etaSeconds", "uint256", False)),
+        "high", "proposal {proposalId} queued, executable at {etaSeconds}", "Governor"),
+    EventSpec(
+        "ProposalExecuted", "ProposalExecuted(uint256)",
+        _abi("ProposalExecuted", _inp("proposalId", "uint256", False)),
+        "high", "proposal {proposalId} executed", "Governor"),
+    EventSpec(
+        "ProposalCanceled", "ProposalCanceled(uint256)",
+        _abi("ProposalCanceled", _inp("proposalId", "uint256", False)),
+        "medium", "proposal {proposalId} cancelled", "Governor"),
+    EventSpec(
+        "VotingDelaySet", "VotingDelaySet(uint256,uint256)",
+        _abi("VotingDelaySet", _inp("oldVotingDelay", "uint256", False), _inp("newVotingDelay", "uint256", False)),
+        "critical", "voting delay changed {oldVotingDelay} -> {newVotingDelay}", "Governor"),
+    EventSpec(
+        "VotingPeriodSet", "VotingPeriodSet(uint256,uint256)",
+        _abi("VotingPeriodSet", _inp("oldVotingPeriod", "uint256", False), _inp("newVotingPeriod", "uint256", False)),
+        "critical", "voting period changed {oldVotingPeriod} -> {newVotingPeriod}", "Governor"),
+    EventSpec(
+        "ProposalThresholdSet", "ProposalThresholdSet(uint256,uint256)",
+        _abi("ProposalThresholdSet", _inp("oldProposalThreshold", "uint256", False), _inp("newProposalThreshold", "uint256", False)),
+        "critical", "proposal threshold changed {oldProposalThreshold} -> {newProposalThreshold}", "Governor"),
+    EventSpec(
+        "QuorumNumeratorUpdated", "QuorumNumeratorUpdated(uint256,uint256)",
+        _abi("QuorumNumeratorUpdated", _inp("oldQuorumNumerator", "uint256", False), _inp("newQuorumNumerator", "uint256", False)),
+        "critical", "quorum numerator changed {oldQuorumNumerator} -> {newQuorumNumerator}", "Governor"),
+    EventSpec(
+        "TimelockChange", "TimelockChange(address,address)",
+        _abi("TimelockChange", _inp("oldTimelock", "address", False), _inp("newTimelock", "address", False)),
+        "critical", "governor timelock changed {oldTimelock} -> {newTimelock}", "Governor"),
+    EventSpec(
+        "NewImplementation", "NewImplementation(address,address)",
+        _abi("NewImplementation", _inp("oldImplementation", "address", False), _inp("newImplementation", "address", False)),
+        "critical", "governor implementation changed {oldImplementation} -> {newImplementation}", "GovernorBravo"),
+    # Aragon OS (Lido and other Aragon DAOs)
+    EventSpec(
+        "SetApp", "SetApp(bytes32,bytes32,address)",
+        _abi("SetApp", _inp("namespace", "bytes32", True), _inp("appId", "bytes32", True), _inp("app", "address", False)),
+        "critical", "Aragon kernel app set: appId {appId} -> {app}", "AragonOS"),
+    EventSpec(
+        "SetPermission", "SetPermission(address,address,bytes32,bool)",
+        _abi("SetPermission", _inp("entity", "address", True), _inp("app", "address", True), _inp("role", "bytes32", True), _inp("allowed", "bool", False)),
+        "high", "Aragon permission {role} on {app} for {entity} set to {allowed}", "AragonOS"),
+    EventSpec(
+        "ChangePermissionManager", "ChangePermissionManager(address,bytes32,address)",
+        _abi("ChangePermissionManager", _inp("app", "address", True), _inp("role", "bytes32", True), _inp("manager", "address", True)),
+        "critical", "Aragon permission manager for {role} on {app} changed to {manager}", "AragonOS"),
+    EventSpec(
+        "StartVote", "StartVote(uint256,address,string)",
+        _abi("StartVote", _inp("voteId", "uint256", True), _inp("creator", "address", True), _inp("metadata", "string", False)),
+        "medium", "Aragon vote {voteId} started by {creator}: {metadata}", "AragonVoting"),
+    EventSpec(
+        "ExecuteVote", "ExecuteVote(uint256)",
+        _abi("ExecuteVote", _inp("voteId", "uint256", True)),
+        "high", "Aragon vote {voteId} executed", "AragonVoting"),
     # Safe (Gnosis Safe)
     EventSpec(
         "AddedOwner", "AddedOwner(address)",

@@ -6,7 +6,7 @@ import sys
 
 from . import __version__
 from .alerts import Dispatcher
-from .config import load
+from .config import load_all
 from .events import CATALOG
 from .watcher import Watcher
 
@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--config", default="config.yaml")
     b.add_argument("--from-block", type=int, required=True)
     b.add_argument("--to-block", type=int, required=True)
+    b.add_argument("--chain", default=None, help="chain_name to backfill when the config has several chains")
     sub.add_parser("events", help="list the events in the catalog")
     pr = sub.add_parser("probe", help="inspect the admin surface of addresses and suggest a config")
     pr.add_argument("addresses", nargs="+")
@@ -51,9 +52,12 @@ def main(argv: list[str] | None = None) -> int:
         print(suggest_config(prober, a.rpc, a.chain_name, a.safe_chain, a.label))
         return 0
 
-    cfg = load(a.config)
-    w = Watcher(cfg, Dispatcher(cfg.alerts))
+    cfgs = load_all(a.config)
     if a.cmd == "backfill":
+        if len(cfgs) > 1 and not a.chain:
+            p.error("--chain is required for a multi-chain config")
+        cfg = next((c for c in cfgs if c.chain_name == a.chain), cfgs[0])
+        w = Watcher(cfg, Dispatcher(cfg.alerts))
         n, start = 0, a.from_block
         while start <= a.to_block:
             end = min(start + cfg.max_block_range - 1, a.to_block)
@@ -61,10 +65,20 @@ def main(argv: list[str] | None = None) -> int:
             start = end + 1
         print(f"{n} alerts in blocks {a.from_block}-{a.to_block}", file=sys.stderr)
         return 0
+    watchers = [Watcher(c, Dispatcher(c.alerts)) for c in cfgs]
     if a.once:
-        w.poll_once()
+        for w in watchers:
+            w.poll_once()
         return 0
-    w.run_forever()
+    if len(watchers) == 1:
+        watchers[0].run_forever()
+        return 0
+    import threading
+    threads = [threading.Thread(target=w.run_forever, name=w.cfg.chain_name, daemon=True) for w in watchers]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
     return 0
 
 

@@ -47,6 +47,19 @@ contract LegacyTimelock {
     }
 }
 
+contract Gov {
+    event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 voteStart, uint256 voteEnd, string description);
+    event VotingDelaySet(uint256 oldVotingDelay, uint256 newVotingDelay);
+    event SetApp(bytes32 indexed namespace, bytes32 indexed appId, address app);
+    function propose(string calldata desc) external {
+        address[] memory t = new address[](2); uint256[] memory v = new uint256[](2);
+        string[] memory s = new string[](2); bytes[] memory c = new bytes[](2);
+        emit ProposalCreated(42, msg.sender, t, v, s, c, 1, 2, desc);
+    }
+    function setDelay(uint256 d) external { emit VotingDelaySet(1, d); }
+    function setApp(address a) external { emit SetApp(bytes32(uint256(1)), bytes32(uint256(2)), a); }
+}
+
 contract Token {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function transfer(address to, uint256 v) external { emit Transfer(msg.sender, to, v); }

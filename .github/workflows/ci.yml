@@ -15,5 +15,5 @@ jobs:
       - run: pip install -e . pytest
       - run: pytest -q
       - run: ownerwatch events
-      - run: for f in examples/*.yaml; do python -c "import ownerwatch.config as c; c.load('$f')"; done
+      - run: for f in examples/*.yaml; do python -c "import ownerwatch.config as c; c.load_all('$f')"; done
       - run: cd contracts && forge install foundry-rs/forge-std --no-git && forge test -vv

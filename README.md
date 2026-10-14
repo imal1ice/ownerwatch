@@ -16,6 +16,8 @@ Every address in your config gets the full catalog:
 | Pausable | Paused, Unpaused | medium |
 | TimelockController | CallScheduled, CallExecuted, Cancelled, MinDelayChange | high / critical |
 | Legacy Timelock (Compound, Uniswap and forks) | NewAdmin, NewPendingAdmin, NewDelay, QueueTransaction, ExecuteTransaction, CancelTransaction | medium to critical |
+| Governor (OpenZeppelin and GovernorBravo) | ProposalCreated, ProposalQueued, ProposalExecuted, ProposalCanceled, VotingDelaySet, VotingPeriodSet, ProposalThresholdSet, QuorumNumeratorUpdated, TimelockChange, NewImplementation | medium to critical |
+| Aragon OS (Lido and others) | SetApp, SetPermission, ChangePermissionManager, StartVote, ExecuteVote | medium to critical |
 | Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler | critical / high |
 | ERC-20 treasuries | Transfer out above a threshold you set | high |
 | NFT treasuries | Any ERC-721 or ERC-1155 transfer out | high |
@@ -38,8 +40,17 @@ ownerwatch run --config config.yaml
 Or with Docker:
 
 ```bash
-docker build -t ownerwatch .
-docker run -v $PWD/config.yaml:/app/config.yaml -v ownerwatch-state:/app/state ownerwatch
+docker compose up -d        # uses ./config.yaml, keeps state in a named volume
+```
+
+A hardened systemd unit is in `deploy/ownerwatch.service`.
+
+Several chains in one process: put shared settings at the top level and a `chains:` list underneath, see `examples/multichain.yaml`.
+
+**Don't know what to watch?** Point `probe` at your main contract and it walks the owner/admin/proxy chain, tells you who can upgrade or pause it, flags EOAs and 1-of-N Safes, and prints a config:
+
+```bash
+ownerwatch probe --rpc https://eth.drpc.org --safe-chain eth --label Acme 0xYourProxy 0xYourSafe
 ```
 
 Other commands:
@@ -64,7 +75,7 @@ ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --
 - Waits `confirmations` blocks behind the head so small reorgs don't produce ghost alerts.
 - Persists a block cursor to `state/`, so a restart resumes where it left off with no duplicates.
 - Alert delivery never stops the poller: a dead webhook is logged and skipped.
-- Works on any EVM chain. Run one instance per chain.
+- Works on any EVM chain, one process can watch several.
 
 ## Hosted tier
 
@@ -77,8 +88,7 @@ cd contracts && forge install foundry-rs/forge-std --no-git && forge test
 ## Roadmap
 
 - Full timelock calldata decoding with verified ABIs (Sourcify)
-- Multi-chain in one process
-- Aragon (Lido-style) and Governor events
+- Native balance and NFT alerts for Safe queues (currently on-chain only)
 
 ## Support the project
 

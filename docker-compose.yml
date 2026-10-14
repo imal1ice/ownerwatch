@@ -1,0 +1,11 @@
+services:
+  ownerwatch:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ownerwatch-state:/app/state
+    environment:
+      - PYTHONUNBUFFERED=1
+volumes:
+  ownerwatch-state:

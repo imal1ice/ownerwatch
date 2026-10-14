@@ -1,0 +1,19 @@
+# One process, several chains. Top-level keys are shared defaults;
+# each entry under chains: has its own rpc_url, chain_name and targets.
+poll_interval_seconds: 20
+confirmations: 2
+alerts:
+  discord_webhook: ""
+chains:
+  - chain_name: ethereum
+    rpc_url: "https://rpc.flashbots.net"
+    max_block_range: 10000
+    contracts:
+      - address: "0x1a9C8182C09F50C8318d769245beA52c32BE35BC"
+        label: "Uniswap Timelock"
+  - chain_name: base
+    rpc_url: "https://base.drpc.org"
+    max_block_range: 500
+    contracts:
+      - address: "0x7bB73Fe1d94d1A0E4b4c3a7a1a4Ae5f2a2f2a0b0"
+        label: "Example Base contract (replace me)"

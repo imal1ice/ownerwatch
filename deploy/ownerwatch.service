@@ -1,0 +1,23 @@
+# /etc/systemd/system/ownerwatch.service
+# sudo useradd -r -s /usr/sbin/nologin ownerwatch
+# sudo -u ownerwatch python3 -m venv /opt/ownerwatch && /opt/ownerwatch/bin/pip install git+https://github.com/imal1ice/ownerwatch
+# put config.yaml in /etc/ownerwatch/ then: systemctl enable --now ownerwatch
+[Unit]
+Description=ownerwatch admin-surface monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ownerwatch
+WorkingDirectory=/var/lib/ownerwatch
+ExecStart=/opt/ownerwatch/bin/ownerwatch run --config /etc/ownerwatch/config.yaml
+Restart=always
+RestartSec=10
+StateDirectory=ownerwatch
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ownerwatch
+
+[Install]
+WantedBy=multi-user.target

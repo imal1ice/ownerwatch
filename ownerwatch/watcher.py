@@ -188,6 +188,9 @@ class Watcher:
             return None
         args = {k: (_hex(v) if isinstance(v, (bytes, bytearray)) else v) for k, v in dict(ev["args"]).items()}
         addr = Web3.to_checksum_address(lg["address"])
+        if spec.name == "ProposalCreated":
+            args["ntargets"] = len(args.get("targets") or [])
+            args["title"] = (args.get("description") or "").strip().splitlines()[0][:120] if args.get("description") else "(no description)"
         msg = spec.describe.format(**args)
         if spec.name in ("CallScheduled", "CallExecuted"):
             msg += f" calling {describe_call(args['data'])}"

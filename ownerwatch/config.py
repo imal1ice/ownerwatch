@@ -78,8 +78,34 @@ def _addr(a: str) -> str:
     return Web3.to_checksum_address(a)
 
 
-def load(path: str | Path) -> Config:
+SHARED_KEYS = ("poll_interval_seconds", "confirmations", "max_block_range", "start_block", "alerts", "safe_api_key")
+
+
+def load_all(path: str | Path) -> list[Config]:
+    """One Config per chain. A file with a top-level `chains:` list yields one
+    Config per entry; keys in SHARED_KEYS are inherited from the top level."""
     raw = yaml.safe_load(Path(path).read_text()) or {}
+    if "chains" not in raw:
+        return [_build(raw)]
+    out = []
+    for entry in raw["chains"] or []:
+        merged = {k: raw[k] for k in SHARED_KEYS if k in raw}
+        merged.update(entry)
+        merged.setdefault("state_file", f"state/{merged.get('chain_name', 'chain')}.json")
+        out.append(_build(merged))
+    if not out:
+        raise ValueError("chains: is empty")
+    return out
+
+
+def load(path: str | Path) -> Config:
+    cfgs = load_all(path)
+    if len(cfgs) > 1:
+        raise ValueError("multi-chain config: use load_all()")
+    return cfgs[0]
+
+
+def _build(raw: dict) -> Config:
     contracts = [Contract(_addr(c["address"]), c.get("label", c["address"])) for c in raw.get("contracts", []) or []]
     treasuries = []
     for t in raw.get("treasuries", []) or []:
