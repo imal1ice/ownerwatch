@@ -206,6 +206,22 @@ class Watcher:
             lines = [ln.strip() for ln in str(args.get("description") or "").splitlines() if ln.strip()]
             args["title"] = lines[0][:120] if lines else "(no description)"
         msg = spec.describe.format(**args)
+        if spec.name == "ProposalCreated":
+            # decode each action so the alert says what the proposal does, not just that it exists
+            targets, datas = args.get("targets") or [], args.get("calldatas") or []
+            sigs = args.get("signatures") or []
+            actions = []
+            for i, (tgt, data) in enumerate(zip(targets, datas)):
+                sig = sigs[i] if i < len(sigs) and sigs[i] else None   # GovernorBravo-style explicit signature
+                if sig:
+                    actions.append(f"{tgt}: {sig}")
+                else:
+                    actions.append(f"{tgt}: {describe_call(data, self.chain_id, tgt)}")
+                if i == 4 and len(targets) > 5:
+                    actions.append(f"... {len(targets) - 5} more")
+                    break
+            if actions:
+                msg += " | actions: " + "; ".join(actions)
         if spec.name in ("CallScheduled", "CallExecuted"):
             msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'))}"
         return Alert(

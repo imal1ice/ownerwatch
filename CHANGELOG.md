@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Governor ProposalCreated alerts list each action's target and decoded call
+
 ## 0.6.0
 - `heartbeat_url`: dead-man's-switch ping after every successful poll
 - Slack sink; Discord, Slack and Telegram messages clipped to their limits; one failing sink no longer blocks the others

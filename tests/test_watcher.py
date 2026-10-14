@@ -166,7 +166,9 @@ def test_legacy_timelock(anvil, artifacts, tmp_path):
     assert "sig 'setFeeProtocol(uint8,uint8)'" in by["QueueTransaction"].message
 
 
-def test_governor_and_aragon(anvil, artifacts, tmp_path):
+def test_governor_and_aragon(anvil, artifacts, tmp_path, monkeypatch):
+    import ownerwatch.watcher as wmod
+    monkeypatch.setattr(wmod, "describe_call", lambda d, *a: "setFee(uint256) [0x69fe0e2d]")
     w3 = anvil
     deployer = w3.eth.accounts[0]
     gov = _deploy(w3, *artifacts["Gov"])
@@ -181,6 +183,7 @@ def test_governor_and_aragon(anvil, artifacts, tmp_path):
     assert w.poll_once() == 4
     titles = [a.message for a in got if a.event == "ProposalCreated"]
     assert any("(no description)" in t for t in titles) and any("2 targets: # Raise fee switch" in t for t in titles)
+    assert all("actions: 0x" in t and "setFee(uint256)" in t for t in titles)
     by = {a.event: a for a in got}
     assert by["VotingDelaySet"].severity == "critical" and "1 -> 7200" in by["VotingDelaySet"].message
     assert by["SetApp"].source == "AragonOS" and deployer in by["SetApp"].message
