@@ -91,3 +91,19 @@ def describe_call(data: bytes | str, chain_id: int | None = None, target: str | 
                 log.debug("abi decode failed for %s: %s", target, e)
     name = selector_name(raw)
     return f"{name} [{sel}]" if name else f"selector {sel}"
+
+
+def describe_signature_call(signature: str, data: bytes | str) -> str:
+    """GovernorBravo/legacy Timelock style: explicit 'fn(type,type)' plus args-only calldata."""
+    raw = _raw(data)
+    try:
+        from eth_abi import decode as abi_decode
+        types_str = signature[signature.index("(") + 1: signature.rindex(")")]
+        types = [t.strip() for t in types_str.split(",") if t.strip()]
+        if not types:
+            return signature
+        values = abi_decode(types, raw)
+        return f"{signature[:signature.index('(')]}({', '.join(_fmt(v) for v in values)})"
+    except Exception as e:  # noqa: BLE001
+        log.debug("signature decode failed for %s: %s", signature, e)
+        return signature

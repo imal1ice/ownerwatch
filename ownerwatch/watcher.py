@@ -9,7 +9,7 @@ from web3 import Web3
 
 from .alerts import Alert, Dispatcher
 from .config import Config
-from .decode import describe_call
+from .decode import describe_call, describe_signature_call
 from .safe import SafeQueueWatcher, SafeTarget
 from .events import (ADMIN_TOPICS, BY_TOPIC, ERC721_TRANSFER_SPEC, ERC1155_BATCH_SPEC, ERC1155_SINGLE_SPEC,
                      ERC1155_TOPICS, TRANSFER_SPEC, TRANSFER_TOPIC)
@@ -214,7 +214,7 @@ class Watcher:
             for i, (tgt, data) in enumerate(zip(targets, datas)):
                 sig = sigs[i] if i < len(sigs) and sigs[i] else None   # GovernorBravo-style explicit signature
                 if sig:
-                    actions.append(f"{tgt}: {sig}")
+                    actions.append(f"{tgt}: {describe_signature_call(sig, data)}")
                 else:
                     actions.append(f"{tgt}: {describe_call(data, self.chain_id, tgt)}")
                 if i == 4 and len(targets) > 5:
@@ -222,6 +222,8 @@ class Watcher:
                     break
             if actions:
                 msg += " | actions: " + "; ".join(actions)
+        if spec.name in ("QueueTransaction", "ExecuteTransaction") and args.get("signature"):
+            msg += f" = {describe_signature_call(args['signature'], args.get('data') or b'')}"
         if spec.name in ("CallScheduled", "CallExecuted"):
             msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'))}"
         return Alert(
