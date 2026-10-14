@@ -14,6 +14,12 @@ IMPL_SLOT = int("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382
 ADMIN_SLOT = int("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103", 16)
 BEACON_SLOT = int("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50", 16)
 ZERO = "0x" + "00" * 20
+MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"   # same address on every major EVM chain
+MULTICALL3_ABI = [{"type": "function", "name": "aggregate3", "stateMutability": "payable",
+                   "inputs": [{"name": "calls", "type": "tuple[]", "components": [
+                       {"name": "target", "type": "address"}, {"name": "allowFailure", "type": "bool"}, {"name": "callData", "type": "bytes"}]}],
+                   "outputs": [{"name": "returnData", "type": "tuple[]", "components": [
+                       {"name": "success", "type": "bool"}, {"name": "returnData", "type": "bytes"}]}]}]
 
 
 def _sel(sig: str) -> bytes:
@@ -55,6 +61,29 @@ class Prober:
     def __init__(self, w3: Web3):
         self.w3 = w3
         self.seen: dict[str, Node] = {}
+        self._mc = None
+        try:
+            if len(self.w3.eth.get_code(MULTICALL3)) > 0:
+                self._mc = self.w3.eth.contract(address=MULTICALL3, abi=MULTICALL3_ABI)
+        except Exception:  # noqa: BLE001
+            self._mc = None
+
+    def _batch_calls(self, calls: list[tuple[str, bytes]]) -> list[bytes | None]:
+        """eth_call many (target, data) pairs in one request via Multicall3; falls back to one call each."""
+        if self._mc is not None and len(calls) > 1:
+            try:
+                res = self._mc.functions.aggregate3([(t, True, d) for t, d in calls]).call()
+                return [bytes(r[1]) if r[0] and r[1] else None for r in res]
+            except Exception:  # noqa: BLE001
+                pass
+        out = []
+        for t, d in calls:
+            try:
+                r = self.w3.eth.call({"to": t, "data": d})
+                out.append(bytes(r) if r else None)
+            except Exception:  # noqa: BLE001
+                out.append(None)
+        return out
 
     # ---- low level ----
     def _call(self, addr: str, sig: str) -> bytes | None:
@@ -93,17 +122,29 @@ class Prober:
     def check_roles(self, candidates: list[str]) -> None:
         """Second pass: for every AccessControl contract seen, test which of the
         probed addresses hold key roles. Also detects an open executor on timelocks."""
-        for n in list(self.seen.values()):
-            if n.kind == "eoa" or not self._supports_access_control(n.address):
+        contracts = [n for n in self.seen.values() if n.kind != "eoa"]
+        # one batched request to find which contracts speak AccessControl at all
+        probe_calls = [(n.address, _sel("hasRole(bytes32,address)") + ROLES["DEFAULT_ADMIN_ROLE"] + bytes(32)) for n in contracts]
+        supports = self._batch_calls(probe_calls)
+        for n, sup in zip(contracts, supports):
+            if sup is None or len(sup) != 32:
                 continue
-            for name, role in ROLES.items():
-                holders = [c for c in candidates if c != n.address and self._has_role(n.address, role, c)]
-                if holders:
-                    n.roles[name] = holders
+            pairs = [(name, c) for name in ROLES for c in candidates if c != n.address]
             if n.kind == "timelock":
-                n.open_executor = self._has_role(n.address, ROLES["EXECUTOR_ROLE"], ZERO)
-                if n.open_executor:
+                pairs.append(("EXECUTOR_ROLE", ZERO))
+            calls = [(n.address, _sel("hasRole(bytes32,address)") + ROLES[name] + bytes(12) + bytes.fromhex(c[2:])) for name, c in pairs]
+            results = self._batch_calls(calls)
+            for (name, c), r in zip(pairs, results):
+                has = bool(int.from_bytes(r[:32], "big")) if r and len(r) == 32 else False
+                if not has:
+                    continue
+                if c == ZERO:
+                    n.open_executor = True
                     n.notes.append("executor role is open: anyone can execute a matured operation")
+                else:
+                    n.roles.setdefault(name, []).append(c)
+            if n.kind == "timelock" and n.open_executor is None:
+                n.open_executor = False
             for who in n.roles.get("DEFAULT_ADMIN_ROLE", []):
                 c = self.seen.get(who)
                 if c and c.kind == "eoa":
