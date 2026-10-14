@@ -1,0 +1,13 @@
+rpc_url: "https://rpc.flashbots.net"   # accepts 10k-block eth_getLogs ranges; most public RPCs do not
+chain_name: ethereum
+confirmations: 3
+max_block_range: 10000
+contracts:
+  - address: "0x5a0Aae59D09fccBdDb6C6CcEB07B7279367C3d2A"
+    label: "Optimism Foundation Safe"
+safes:
+  - address: "0x5a0Aae59D09fccBdDb6C6CcEB07B7279367C3d2A"
+    label: "Optimism Foundation Safe"
+    chain: eth
+alerts:
+  discord_webhook: ""

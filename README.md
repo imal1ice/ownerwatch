@@ -15,10 +15,13 @@ Every address in your config gets the full catalog:
 | ERC-1967 proxies | Upgraded, AdminChanged, BeaconUpgraded | critical |
 | Pausable | Paused, Unpaused | medium |
 | TimelockController | CallScheduled, CallExecuted, Cancelled, MinDelayChange | high / critical |
+| Legacy Timelock (Compound, Uniswap and forks) | NewAdmin, NewPendingAdmin, NewDelay, QueueTransaction, ExecuteTransaction, CancelTransaction | medium to critical |
 | Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler | critical / high |
 | ERC-20 treasuries | Transfer out above a threshold you set | high |
 | NFT treasuries | Any ERC-721 or ERC-1155 transfer out | high |
 | Native balance | ETH balance of a treasury falls by more than a threshold between polls | high |
+
+**Safe queues.** Add a Safe under `safes:` and ownerwatch polls the Safe Transaction Service: you get an alert when a transaction is proposed, and a critical one when it has collected enough signatures to execute. That is the moment to act; the on-chain events above are the record of what already happened.
 
 Timelock `CallScheduled` / `CallExecuted` alerts also show the function being called, resolved through the openchain and 4byte selector databases (falls back to the raw selector offline).
 
@@ -47,6 +50,14 @@ ownerwatch backfill --from-block N --to-block M   # replay history, prints what 
 ownerwatch events                           # list the catalog
 ```
 
+## Examples
+
+`examples/` has verified configs for Uniswap, Compound, Arbitrum, Aave and the Optimism Foundation Safe on mainnet. Backfill one to see what alerts look like on real history:
+
+```bash
+ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --to-block 22050000
+```
+
 ## How it works
 
 - Polls `eth_getLogs` for the catalog's topic hashes on your addresses, in chunks that fit public RPCs.
@@ -55,12 +66,19 @@ ownerwatch events                           # list the catalog
 - Alert delivery never stops the poller: a dead webhook is logged and skipped.
 - Works on any EVM chain. Run one instance per chain.
 
+## Hosted tier
+
+Don't want to run it? I run it for you, per chain, paid in USDC on-chain through `contracts/src/Subscriptions.sol`: approve, call `subscribe(months, configRef)`, send me the config. No invoices, no accounts, no KYC either way. Deployment address will be listed here once live; until then open an issue.
+
+```bash
+cd contracts && forge install foundry-rs/forge-std --no-git && forge test
+```
+
 ## Roadmap
 
 - Full timelock calldata decoding with verified ABIs (Sourcify)
 - Multi-chain in one process
-- Safe transaction queue watching (pending, not just executed)
-- A hosted tier for teams that don't want to run infra, paid in USDC on-chain
+- Aragon (Lido-style) and Governor events
 
 ## Support the project
 

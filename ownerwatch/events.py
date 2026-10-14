@@ -94,6 +94,34 @@ CATALOG: list[EventSpec] = [
         "MinDelayChange", "MinDelayChange(uint256,uint256)",
         _abi("MinDelayChange", _inp("oldDuration", "uint256", False), _inp("newDuration", "uint256", False)),
         "critical", "timelock min delay changed {oldDuration}s -> {newDuration}s", "TimelockController"),
+    # Legacy Compound-style Timelock (Uniswap, Compound v2 and many forks)
+    EventSpec(
+        "NewAdmin", "NewAdmin(address)",
+        _abi("NewAdmin", _inp("newAdmin", "address", True)),
+        "critical", "timelock admin changed to {newAdmin}", "Timelock(legacy)"),
+    EventSpec(
+        "NewPendingAdmin", "NewPendingAdmin(address)",
+        _abi("NewPendingAdmin", _inp("newPendingAdmin", "address", True)),
+        "high", "timelock pending admin set to {newPendingAdmin}", "Timelock(legacy)"),
+    EventSpec(
+        "NewDelay", "NewDelay(uint256)",
+        _abi("NewDelay", _inp("newDelay", "uint256", True)),
+        "critical", "timelock delay changed to {newDelay}s", "Timelock(legacy)"),
+    EventSpec(
+        "QueueTransaction", "QueueTransaction(bytes32,address,uint256,string,bytes,uint256)",
+        _abi("QueueTransaction", _inp("txHash", "bytes32", True), _inp("target", "address", True), _inp("value", "uint256", False),
+             _inp("signature", "string", False), _inp("data", "bytes", False), _inp("eta", "uint256", False)),
+        "high", "timelock tx queued: target {target} value {value} sig '{signature}' eta {eta}", "Timelock(legacy)"),
+    EventSpec(
+        "ExecuteTransaction", "ExecuteTransaction(bytes32,address,uint256,string,bytes,uint256)",
+        _abi("ExecuteTransaction", _inp("txHash", "bytes32", True), _inp("target", "address", True), _inp("value", "uint256", False),
+             _inp("signature", "string", False), _inp("data", "bytes", False), _inp("eta", "uint256", False)),
+        "high", "timelock tx executed: target {target} value {value} sig '{signature}'", "Timelock(legacy)"),
+    EventSpec(
+        "CancelTransaction", "CancelTransaction(bytes32,address,uint256,string,bytes,uint256)",
+        _abi("CancelTransaction", _inp("txHash", "bytes32", True), _inp("target", "address", True), _inp("value", "uint256", False),
+             _inp("signature", "string", False), _inp("data", "bytes", False), _inp("eta", "uint256", False)),
+        "medium", "timelock tx cancelled: target {target} sig '{signature}'", "Timelock(legacy)"),
     # Safe (Gnosis Safe)
     EventSpec(
         "AddedOwner", "AddedOwner(address)",

@@ -48,7 +48,7 @@ def anvil():
 def artifacts():
     subprocess.run(["forge", "build", "--root", str(FIXTURES)], check=True, capture_output=True)
     out = {}
-    for name in ("Admin", "Token", "NFT", "Multi", "Timelock"):
+    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out
@@ -148,3 +148,19 @@ def test_nft_native_and_timelock(anvil, artifacts, tmp_path, monkeypatch):
     assert "calling transferOwnership(address) [0xf2fde38b]" in by["CallScheduled"].message
     assert "native balance fell 2.0" in by["BalanceDrop"].message
     assert watcher.poll_once() == 0
+
+
+def test_legacy_timelock(anvil, artifacts, tmp_path):
+    w3 = anvil
+    deployer = w3.eth.accounts[0]
+    tl = _deploy(w3, *artifacts["LegacyTimelock"])
+    cfg = Config(rpc_url="unused", chain_name="anvil", confirmations=0, start_block=w3.eth.block_number + 1,
+                 state_file=str(tmp_path / "c.json"), contracts=[Contract(tl.address, "Uni TL")], alerts=Alerts())
+    got: list = []
+    w = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    tl.functions.setDelay(86400).transact({"from": deployer})
+    w3.eth.wait_for_transaction_receipt(tl.functions.queue(deployer, "setFeeProtocol(uint8,uint8)").transact({"from": deployer}))
+    assert w.poll_once() == 2
+    by = {a.event: a for a in got}
+    assert by["NewDelay"].severity == "critical" and "86400s" in by["NewDelay"].message
+    assert "sig 'setFeeProtocol(uint8,uint8)'" in by["QueueTransaction"].message

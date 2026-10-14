@@ -7,3 +7,7 @@ config.yaml
 tests/fixtures/out/
 tests/fixtures/cache/
 .pytest_cache/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/

@@ -38,6 +38,15 @@ contract Timelock {
     }
 }
 
+contract LegacyTimelock {
+    event NewDelay(uint256 indexed newDelay);
+    event QueueTransaction(bytes32 indexed txHash, address indexed target, uint256 value, string signature, bytes data, uint256 eta);
+    function setDelay(uint256 d) external { emit NewDelay(d); }
+    function queue(address target, string calldata sig) external {
+        emit QueueTransaction(keccak256(bytes(sig)), target, 0, sig, "", block.timestamp + 2 days);
+    }
+}
+
 contract Token {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function transfer(address to, uint256 v) external { emit Transfer(msg.sender, to, v); }

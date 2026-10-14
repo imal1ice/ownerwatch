@@ -1,0 +1,9 @@
+rpc_url: "https://rpc.flashbots.net"   # accepts 10k-block eth_getLogs ranges; most public RPCs do not
+chain_name: ethereum
+confirmations: 3
+max_block_range: 10000
+contracts:
+  - address: "0xE6841D92B0C345144506576eC13ECf5103aC7f49"
+    label: "Arbitrum DAO L1 Timelock (proxy)"
+alerts:
+  discord_webhook: ""

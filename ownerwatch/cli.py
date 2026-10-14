@@ -35,7 +35,11 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load(a.config)
     w = Watcher(cfg, Dispatcher(cfg.alerts))
     if a.cmd == "backfill":
-        n = w._scan(a.from_block, a.to_block)
+        n, start = 0, a.from_block
+        while start <= a.to_block:
+            end = min(start + cfg.max_block_range - 1, a.to_block)
+            n += w._scan(start, end)
+            start = end + 1
         print(f"{n} alerts in blocks {a.from_block}-{a.to_block}", file=sys.stderr)
         return 0
     if a.once:

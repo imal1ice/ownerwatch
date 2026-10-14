@@ -37,6 +37,13 @@ class Contract:
 
 
 @dataclass
+class Safe:
+    address: str
+    label: str
+    chain: str = "eth"
+
+
+@dataclass
 class Alerts:
     discord_webhook: str = ""
     telegram_bot_token: str = ""
@@ -56,11 +63,14 @@ class Config:
     state_file: str = "state/cursor.json"
     contracts: list[Contract] = field(default_factory=list)
     treasuries: list[Treasury] = field(default_factory=list)
+    safes: list[Safe] = field(default_factory=list)
+    safe_api_key: str = ""
     alerts: Alerts = field(default_factory=Alerts)
 
     def labels(self) -> dict[str, str]:
         out = {c.address: c.label for c in self.contracts}
         out.update({t.address: t.label for t in self.treasuries})
+        out.update({s.address: s.label for s in self.safes})
         return out
 
 
@@ -79,6 +89,7 @@ def load(path: str | Path) -> Config:
         drop = t.get("min_native_drop")
         treasuries.append(Treasury(_addr(t["address"]), t.get("label", t["address"]), tokens, nfts,
                                    float(drop) if drop is not None else None))
+    safes = [Safe(_addr(x["address"]), x.get("label", x["address"]), x.get("chain", "eth")) for x in raw.get("safes", []) or []]
     alerts = Alerts(**{k: v for k, v in (raw.get("alerts") or {}).items() if k in Alerts.__dataclass_fields__})
     cfg = Config(
         rpc_url=raw["rpc_url"],
@@ -90,8 +101,10 @@ def load(path: str | Path) -> Config:
         state_file=raw.get("state_file", "state/cursor.json"),
         contracts=contracts,
         treasuries=treasuries,
+        safes=safes,
+        safe_api_key=str(raw.get("safe_api_key", "") or ""),
         alerts=alerts,
     )
-    if not cfg.contracts and not cfg.treasuries:
+    if not cfg.contracts and not cfg.treasuries and not cfg.safes:
         raise ValueError("config has nothing to watch: add contracts or treasuries")
     return cfg

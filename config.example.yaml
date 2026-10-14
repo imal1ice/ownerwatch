@@ -1,6 +1,6 @@
 # ownerwatch configuration. Copy to config.yaml and edit.
 
-rpc_url: "https://ethereum-rpc.publicnode.com"   # any JSON-RPC endpoint
+rpc_url: "https://rpc.flashbots.net"   # any JSON-RPC endpoint; this public one accepts wide eth_getLogs ranges
 chain_name: "ethereum"
 
 poll_interval_seconds: 15
@@ -31,6 +31,15 @@ treasuries:
       - address: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D"
         label: "BAYC"
     min_native_drop: 50           # optional: alert if the ETH balance falls by >= 50 ETH between polls
+
+# Optional: watch Safe multisig queues via the Safe Transaction Service.
+# Alerts when a transaction is proposed and again when it has enough
+# signatures to execute. chain keys: eth, base, arb1, oeth, matic, gno, bnb, ...
+safes:
+  - address: "0x0000000000000000000000000000000000000003"
+    label: "ExampleProtocol Admin Safe"
+    chain: "eth"
+safe_api_key: ""                # not required today; supported if Safe starts enforcing it
 
 # Where alerts go. Any combination; stdout is always on.
 alerts:

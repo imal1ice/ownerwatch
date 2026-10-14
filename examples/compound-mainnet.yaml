@@ -1,0 +1,9 @@
+rpc_url: "https://rpc.flashbots.net"   # accepts 10k-block eth_getLogs ranges; most public RPCs do not
+chain_name: ethereum
+confirmations: 3
+max_block_range: 10000
+contracts:
+  - address: "0x6d903f6003cca6255D85CcA4D3B5E5146dC33925"
+    label: "Compound Timelock"
+alerts:
+  discord_webhook: ""

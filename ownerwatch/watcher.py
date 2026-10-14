@@ -10,6 +10,7 @@ from web3 import Web3
 from .alerts import Alert, Dispatcher
 from .config import Config
 from .decode import describe_call
+from .safe import SafeQueueWatcher, SafeTarget
 from .events import (ADMIN_TOPICS, BY_TOPIC, ERC721_TRANSFER_SPEC, ERC1155_BATCH_SPEC, ERC1155_SINGLE_SPEC,
                      ERC1155_TOPICS, TRANSFER_SPEC, TRANSFER_TOPIC)
 
@@ -28,17 +29,20 @@ class Cursor:
         self.path = Path(path)
         self.last_block: int | None = None
         self.balances: dict[str, int] = {}
+        self.safes: dict = {}
         if self.path.exists():
             d = json.loads(self.path.read_text())
             self.last_block = d.get("last_block")
             self.balances = {k: int(v) for k, v in d.get("balances", {}).items()}
+            self.safes = d.get("safes", {})
 
     def save(self, block: int | None = None) -> None:
         if block is not None:
             self.last_block = block
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps({"last_block": self.last_block,
-                                         "balances": {k: str(v) for k, v in self.balances.items()}}))
+                                         "balances": {k: str(v) for k, v in self.balances.items()},
+                                         "safes": self.safes}))
 
 
 class Watcher:
@@ -63,6 +67,12 @@ class Watcher:
             for c in t.nfts:
                 self._nfts.setdefault(c.address, {})[t.address] = (t, c)
         self._native = [t for t in cfg.treasuries if t.min_native_drop is not None]
+        self.safe_queue = None
+        if cfg.safes:
+            self.safe_queue = SafeQueueWatcher([SafeTarget(s.address, s.label, s.chain) for s in cfg.safes],
+                                               cfg.chain_name, cfg.safe_api_key)
+            self.safe_queue.import_state(self.cursor.safes)
+            self._safe_first_run = not self.cursor.safes
 
     # ---- block range management -------------------------------------------------
     def _start(self) -> int:
@@ -77,13 +87,27 @@ class Watcher:
         head = self.w3.eth.block_number - self.cfg.confirmations
         start = self._start()
         n = 0
+        if not (self.admin_addresses or self._tokens or self._nfts):
+            head = start - 1  # nothing to scan on-chain
         while start <= head:
             end = min(start + self.cfg.max_block_range - 1, head)
             n += self._scan(start, end)
             self.cursor.save(end)
             start = end + 1
         n += self._check_native(head)
+        n += self._check_safes()
         return n
+
+    def _check_safes(self) -> int:
+        if not self.safe_queue:
+            return 0
+        alerts = self.safe_queue.poll(first_run=self._safe_first_run)
+        self._safe_first_run = False
+        for a in alerts:
+            self.dispatcher.send(a)
+        self.cursor.safes = self.safe_queue.export_state()
+        self.cursor.save()
+        return len(alerts)
 
     def _check_native(self, block: int) -> int:
         n = 0

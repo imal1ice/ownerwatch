@@ -1,0 +1,28 @@
+rpc_url: "https://rpc.flashbots.net"   # accepts 10k-block eth_getLogs ranges; most public RPCs do not
+chain_name: ethereum
+confirmations: 3
+max_block_range: 10000
+contracts:
+  - address: "0x5300A1a15135EA4dc7aD5a167152C01EFc9b192A"
+    label: "Aave Executor Lvl 1"
+  - address: "0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c"
+    label: "Aave Collector (proxy)"
+treasuries:
+  - address: "0x464C71f6c2F760DdA6093dCB91C24c39e5d6e18c"
+    label: "Aave Collector"
+    tokens:
+      - address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        symbol: USDC
+        decimals: 6
+        min_amount: 500000
+      - address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+        symbol: USDT
+        decimals: 6
+        min_amount: 500000
+      - address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+        symbol: DAI
+        decimals: 18
+        min_amount: 500000
+    min_native_drop: 100
+alerts:
+  discord_webhook: ""
