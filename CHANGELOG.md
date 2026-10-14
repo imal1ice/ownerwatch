@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 - `probe --json`
 - `examples/github-action-drift.yml`: weekly admin-surface drift check for a protocol's own repo
 - `probe --config`: report on every contract and Safe in a config, per chain
