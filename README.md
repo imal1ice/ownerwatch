@@ -2,7 +2,7 @@
 
 Self-hosted monitor that alerts you the moment the **admin surface** of your EVM contracts changes.
 
-Most protocol losses in 2025-2026 started with a key, a role or a proxy changing hands, not with a clever exploit. ownerwatch watches the events that mean "someone just gained control" and pushes them to Discord, Telegram or any webhook within seconds. No account, no SaaS, no third party holding your contract list. One YAML file and a Docker container.
+Most protocol losses in 2025-2026 started with a key, a role or a proxy changing hands, not with a clever exploit. ownerwatch watches the events that mean "someone just gained control" and pushes them to Discord, Slack, Telegram or any webhook within seconds. No account, no SaaS, no third party holding your contract list. One YAML file and a Docker container.
 
 ## What it watches
 

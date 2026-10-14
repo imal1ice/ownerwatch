@@ -45,6 +45,7 @@ safe_api_key: ""                # not required today; supported if Safe starts e
 # Where alerts go. Any combination; stdout is always on.
 alerts:
   discord_webhook: ""            # https://discord.com/api/webhooks/...
+  slack_webhook: ""              # https://hooks.slack.com/services/...
   telegram_bot_token: ""
   telegram_chat_id: ""
   webhook_url: ""                # generic JSON POST

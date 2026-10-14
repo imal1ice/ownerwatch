@@ -46,6 +46,7 @@ class Safe:
 @dataclass
 class Alerts:
     discord_webhook: str = ""
+    slack_webhook: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     webhook_url: str = ""

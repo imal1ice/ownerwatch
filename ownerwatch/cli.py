@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "validate":
         from web3 import Web3
         for cfg in cfgs:
-            sinks = [k for k in ("discord_webhook", "telegram_bot_token", "webhook_url") if getattr(cfg.alerts, k)]
+            sinks = [k for k in ("discord_webhook", "slack_webhook", "telegram_bot_token", "webhook_url") if getattr(cfg.alerts, k)]
             print(f"{cfg.chain_name}: {len(cfg.contracts)} contracts, {len(cfg.treasuries)} treasuries, {len(cfg.safes)} safes, sinks: {', '.join(sinks) or 'stdout only'}")
             try:
                 w3 = Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 15}))

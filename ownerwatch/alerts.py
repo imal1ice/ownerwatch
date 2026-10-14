@@ -46,15 +46,32 @@ class Dispatcher:
             return
         for fn in self.extra_sinks:
             fn(alert)
-        try:
-            if self.cfg.discord_webhook:
-                requests.post(self.cfg.discord_webhook, json={"content": alert.text()}, timeout=10)
-            if self.cfg.telegram_bot_token and self.cfg.telegram_chat_id:
-                requests.post(
-                    f"https://api.telegram.org/bot{self.cfg.telegram_bot_token}/sendMessage",
-                    json={"chat_id": self.cfg.telegram_chat_id, "text": alert.text()}, timeout=10)
-            if self.cfg.webhook_url:
-                requests.post(self.cfg.webhook_url, data=json.dumps(asdict(alert)),
-                              headers={"content-type": "application/json"}, timeout=10)
-        except Exception as e:  # noqa: BLE001
-            log.warning("alert delivery failed: %s", e)
+        text = alert.text()
+        for name, fn in (("discord", self._discord), ("slack", self._slack), ("telegram", self._telegram), ("webhook", self._webhook)):
+            try:
+                fn(alert, text)
+            except Exception as e:  # noqa: BLE001
+                log.warning("%s delivery failed: %s", name, e)
+
+    @staticmethod
+    def _clip(text: str, limit: int) -> str:
+        return text if len(text) <= limit else text[: limit - 1] + "…"
+
+    def _discord(self, alert: Alert, text: str) -> None:
+        if self.cfg.discord_webhook:
+            requests.post(self.cfg.discord_webhook, json={"content": self._clip(text, 2000)}, timeout=10).raise_for_status()
+
+    def _slack(self, alert: Alert, text: str) -> None:
+        if self.cfg.slack_webhook:
+            requests.post(self.cfg.slack_webhook, json={"text": self._clip(text, 3000)}, timeout=10).raise_for_status()
+
+    def _telegram(self, alert: Alert, text: str) -> None:
+        if self.cfg.telegram_bot_token and self.cfg.telegram_chat_id:
+            requests.post(f"https://api.telegram.org/bot{self.cfg.telegram_bot_token}/sendMessage",
+                          json={"chat_id": self.cfg.telegram_chat_id, "text": self._clip(text, 4096),
+                                "disable_web_page_preview": True}, timeout=10).raise_for_status()
+
+    def _webhook(self, alert: Alert, text: str) -> None:
+        if self.cfg.webhook_url:
+            requests.post(self.cfg.webhook_url, data=json.dumps(asdict(alert)),
+                          headers={"content-type": "application/json"}, timeout=10).raise_for_status()
