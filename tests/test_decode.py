@@ -33,3 +33,10 @@ def test_signature_call_decode():
     assert describe_signature_call("transfer(address,uint256)", "0xa9059cbb" + data[2:]) == "transfer(0x" + "11" * 20 + ", 5)"
     assert describe_signature_call("resume()", "0x") == "resume()"
     assert describe_signature_call("broken", "0x") == "broken"
+
+
+def test_fmt_structs_bytes_and_long_lists():
+    from ownerwatch.decode import _fmt
+    out = _fmt([{"identifier": b"\x01\x02", "proof": [b"\xaa"] * 9, "amount": 5}])
+    assert out == "[{identifier=0x0102, proof=[0xaa, 0xaa, 0xaa, 0xaa, ... 5 more], amount=5}]"
+    assert _fmt("x" * 200).endswith("…") and len(_fmt("x" * 200)) == 80

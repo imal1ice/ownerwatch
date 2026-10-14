@@ -81,3 +81,14 @@ def test_probe_json(anvil, artifacts, tmp_path, capsys):  # noqa: F811
     d = json.loads(capsys.readouterr().out)
     kinds = {n["address"]: n["kind"] for n in d["nodes"]}
     assert kinds[admin.address] == "contract" and kinds[w3.eth.accounts[0]] == "eoa"
+
+
+def test_implementation_of_reads_erc1967_and_slot0(anvil, artifacts):  # noqa: F811
+    from ownerwatch.decode import implementation_of
+    w3 = anvil
+    admin = _deploy(w3, *artifacts["Admin"])          # slot 0 holds `owner` (an EOA, no code) -> None
+    assert implementation_of(w3, admin.address) is None
+    token = _deploy(w3, *artifacts["Token"])
+    slot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+    w3.provider.make_request("anvil_setStorageAt", [token.address, slot, "0x" + "00" * 12 + admin.address[2:]])
+    assert implementation_of(w3, token.address) == admin.address

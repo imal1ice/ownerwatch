@@ -74,7 +74,7 @@ class Watcher:
         self.safe_queue = None
         if cfg.safes:
             self.safe_queue = SafeQueueWatcher([SafeTarget(s.address, s.label, s.chain) for s in cfg.safes],
-                                               cfg.chain_name, cfg.safe_api_key)
+                                               cfg.chain_name, cfg.safe_api_key, w3=self.w3)
             self.safe_queue.import_state(self.cursor.safes)
             self._safe_first_run = not self.cursor.safes
 
@@ -218,7 +218,7 @@ class Watcher:
                 if sig:
                     actions.append(f"{tgt}: {describe_signature_call(sig, data)}")
                 else:
-                    actions.append(f"{tgt}: {describe_call(data, self.chain_id, tgt)}")
+                    actions.append(f"{tgt}: {describe_call(data, self.chain_id, tgt, self.w3)}")
                 if i == 4 and len(targets) > 5:
                     actions.append(f"... {len(targets) - 5} more")
                     break
@@ -227,7 +227,7 @@ class Watcher:
         if spec.name in ("QueueTransaction", "ExecuteTransaction") and args.get("signature"):
             msg += f" = {describe_signature_call(args['signature'], args.get('data') or b'')}"
         if spec.name in ("CallScheduled", "CallExecuted"):
-            msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'))}"
+            msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'), self.w3)}"
         return Alert(
             severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
             label=self.labels.get(addr, addr), event=spec.name, source=spec.source,

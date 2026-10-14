@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Decoded arguments format structs and bytes readably and clip long lists; calls on proxies decode via the implementation's verified ABI (Safe singletons included); Safe service timeouts are retried
 - Fix: a Safe added to an existing config had its whole pending backlog alerted as new; seeding is now per Safe
 - `daily_digest`: once-a-day summary of alerts by severity, so quiet and alive are distinguishable in the channel
 

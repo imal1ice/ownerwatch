@@ -44,8 +44,9 @@ class SafeQueueWatcher:
                  "blast": 81457, "celo": 42220, "sonic": 146}
 
     def __init__(self, targets: list[SafeTarget], chain_name: str, api_key: str = "",
-                 session: requests.Session | None = None):
+                 session: requests.Session | None = None, w3=None):
         self.targets = targets
+        self.w3 = w3
         self.chain_name = chain_name
         self.session = session or requests.Session()
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -66,14 +67,20 @@ class SafeQueueWatcher:
     # ---- polling --------------------------------------------------------------------
     def _get(self, url: str, **params) -> dict:
         import time
+        last: Exception | None = None
         for attempt in range(4):
-            r = self.session.get(url, params=params or None, headers=self.headers, timeout=15)
+            try:
+                r = self.session.get(url, params=params or None, headers=self.headers, timeout=30)
+            except requests.exceptions.Timeout as e:
+                last = e
+                time.sleep(2 ** attempt)
+                continue
             if r.status_code == 429 and attempt < 3:
                 time.sleep(2 ** attempt)
                 continue
             r.raise_for_status()
             return r.json()
-        raise RuntimeError("unreachable")
+        raise RuntimeError(f"safe service unreachable: {last}")
 
     def poll(self, first_run: bool = False) -> list[Alert]:
         alerts: list[Alert] = []
@@ -115,7 +122,7 @@ class SafeQueueWatcher:
             live.add(h)
             confs = len(tx.get("confirmations") or [])
             data = tx.get("data") or "0x"
-            call = (describe_call(data, self.CHAIN_IDS.get(t.chain), tx.get("to"))
+            call = (describe_call(data, self.CHAIN_IDS.get(t.chain), tx.get("to"), self.w3)
                     if data not in ("0x", None) else "plain value transfer")
             value_eth = int(tx.get("value") or 0) / 10**18
             summary = (f"nonce {tx.get('nonce')} to {tx.get('to')} value {value_eth:,.4f} calling {call}; "
