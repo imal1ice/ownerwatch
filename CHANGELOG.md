@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Aave V3 (addresses provider, configurator), Morpho Blue, MetaMorpho and Lido core events
+- `ownerwatch validate`, `docs/sample-alerts.md`, PyPI publish workflow (trusted publishing)
+
 ## 0.5.0
 - `ownerwatch probe`: AccessControl role detection, `--roles-from-logs`, open-executor detection, `--markdown` report
 - `ownerwatch hosted`: run a watcher per active on-chain subscriber

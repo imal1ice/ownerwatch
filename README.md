@@ -57,10 +57,14 @@ ownerwatch probe --rpc $ARCHIVE_RPC --roles-from-logs --from-block 19000000 0xAc
 Other commands:
 
 ```bash
+ownerwatch validate                         # check the config, the RPC and that every address has code
+ownerwatch test-alert                       # push a test message through your sinks
 ownerwatch run --once                       # single scan, for cron
 ownerwatch backfill --from-block N --to-block M   # replay history, prints what you would have seen
 ownerwatch events                           # list the catalog
 ```
+
+See [docs/sample-alerts.md](docs/sample-alerts.md) for real alerts replayed from mainnet history.
 
 ## Examples
 

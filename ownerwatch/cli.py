@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--to-block", type=int, required=True)
     b.add_argument("--chain", default=None, help="chain_name to backfill when the config has several chains")
     sub.add_parser("events", help="list the events in the catalog")
+    va = sub.add_parser("validate", help="check a config file and print what it would watch")
+    va.add_argument("--config", default="config.yaml")
     ta = sub.add_parser("test-alert", help="send a test alert through every configured sink")
     ta.add_argument("--config", default="config.yaml")
     h = sub.add_parser("hosted", help="run watchers for every address with an active on-chain subscription")
@@ -78,7 +80,25 @@ def main(argv: list[str] | None = None) -> int:
         print(suggest_config(prober, a.rpc, a.chain_name, a.safe_chain, a.label))
         return 0
 
-    cfgs = load_all(a.config)
+    try:
+        cfgs = load_all(a.config)
+    except Exception as e:  # noqa: BLE001
+        print(f"config error: {e}", file=sys.stderr)
+        return 2
+    if a.cmd == "validate":
+        from web3 import Web3
+        for cfg in cfgs:
+            sinks = [k for k in ("discord_webhook", "telegram_bot_token", "webhook_url") if getattr(cfg.alerts, k)]
+            print(f"{cfg.chain_name}: {len(cfg.contracts)} contracts, {len(cfg.treasuries)} treasuries, {len(cfg.safes)} safes, sinks: {', '.join(sinks) or 'stdout only'}")
+            try:
+                w3 = Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 15}))
+                print(f"  rpc ok, chain id {w3.eth.chain_id}, head {w3.eth.block_number}")
+                for c in cfg.contracts:
+                    if len(w3.eth.get_code(c.address)) == 0:
+                        print(f"  WARNING {c.label} {c.address} has no code on this chain")
+            except Exception as e:  # noqa: BLE001
+                print(f"  rpc FAILED: {e}")
+        return 0
     if a.cmd == "test-alert":
         from .alerts import Alert
         for cfg in cfgs:

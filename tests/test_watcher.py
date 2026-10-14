@@ -48,7 +48,7 @@ def anvil():
 def artifacts():
     subprocess.run(["forge", "build", "--root", str(FIXTURES)], check=True, capture_output=True)
     out = {}
-    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox"):
+    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out
@@ -182,3 +182,20 @@ def test_governor_and_aragon(anvil, artifacts, tmp_path):
     assert "proposal 42 created" in by["ProposalCreated"].message and "2 targets: # Raise fee switch" in by["ProposalCreated"].message
     assert by["VotingDelaySet"].severity == "critical" and "1 -> 7200" in by["VotingDelaySet"].message
     assert by["SetApp"].source == "AragonOS" and deployer in by["SetApp"].message
+
+
+def test_protocol_events(anvil, artifacts, tmp_path):
+    w3 = anvil
+    deployer = w3.eth.accounts[0]
+    proto = _deploy(w3, *artifacts["Proto"])
+    cfg = Config(rpc_url="unused", chain_name="anvil", confirmations=0, start_block=w3.eth.block_number + 1,
+                 state_file=str(tmp_path / "c.json"), contracts=[Contract(proto.address, "P")], alerts=Alerts())
+    got: list = []
+    w = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    w3.eth.wait_for_transaction_receipt(proto.functions.poke(w3.eth.accounts[1]).transact({"from": deployer}))
+    assert w.poll_once() == 4
+    by = {a.event: a for a in got}
+    assert by["PoolUpdated"].source == "AaveV3" and by["PoolUpdated"].severity == "critical"
+    assert by["SetCurator"].source == "MetaMorpho"
+    assert "cap set for market 0x" in by["SetCap"].message and ": 5 by" in by["SetCap"].message
+    assert by["Stopped"].source == "Lido"

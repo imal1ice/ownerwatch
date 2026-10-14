@@ -65,6 +65,14 @@ contract RoleBox {
     constructor() { hasRole[bytes32(0)][msg.sender] = true; }
 }
 
+contract Proto {
+    event PoolUpdated(address indexed oldAddress, address indexed newAddress);
+    event SetCurator(address indexed newCurator);
+    event SetCap(address indexed caller, bytes32 indexed id, uint256 cap);
+    event Stopped();
+    function poke(address a) external { emit PoolUpdated(address(0), a); emit SetCurator(a); emit SetCap(msg.sender, bytes32(uint256(9)), 5); emit Stopped(); }
+}
+
 contract Token {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function transfer(address to, uint256 v) external { emit Transfer(msg.sender, to, v); }
