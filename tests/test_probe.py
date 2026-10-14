@@ -2,7 +2,7 @@ import shutil
 
 import pytest
 
-from ownerwatch.probe import Prober, describe, suggest_config
+from ownerwatch.probe import Prober, describe, markdown_report, suggest_config
 from tests.test_watcher import _deploy, anvil, artifacts  # noqa: F401  (fixtures)
 
 pytestmark = pytest.mark.skipif(shutil.which("anvil") is None, reason="foundry not installed")
@@ -48,3 +48,14 @@ def test_role_history_from_logs(anvil, artifacts):  # noqa: F811
     assert out["DEFAULT_ADMIN_ROLE"] == [b]
     assert out["0x" + "11" * 32] == [a]
     assert any("DEFAULT_ADMIN_ROLE held by EOA" in x for x in p.seen[admin.address].notes)
+
+
+def test_markdown_report(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    admin = _deploy(w3, *artifacts["Admin"])
+    p = Prober(w3)
+    root = p.probe(admin.address)
+    md = markdown_report(p, "Test", "anvil", [root])
+    assert md.startswith("# Test admin surface on anvil")
+    assert "| contract |" in md and "controlled by an EOA" in md
+    assert "(contract) -> " in md and "(eoa)" in md
