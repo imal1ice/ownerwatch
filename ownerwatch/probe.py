@@ -18,6 +18,17 @@ def _sel(sig: str) -> bytes:
     return Web3.keccak(text=sig)[:4]
 
 
+ROLES = {
+    "DEFAULT_ADMIN_ROLE": b"\x00" * 32,
+    "PROPOSER_ROLE": Web3.keccak(text="PROPOSER_ROLE"),
+    "EXECUTOR_ROLE": Web3.keccak(text="EXECUTOR_ROLE"),
+    "CANCELLER_ROLE": Web3.keccak(text="CANCELLER_ROLE"),
+    "UPGRADER_ROLE": Web3.keccak(text="UPGRADER_ROLE"),
+    "PAUSER_ROLE": Web3.keccak(text="PAUSER_ROLE"),
+    "MINTER_ROLE": Web3.keccak(text="MINTER_ROLE"),
+}
+
+
 @dataclass
 class Node:
     address: str
@@ -33,6 +44,8 @@ class Node:
     safe_owners: list[str] = field(default_factory=list)
     delay: int | None = None
     paused: bool | None = None
+    roles: dict[str, list[str]] = field(default_factory=dict)   # role name -> holders found among probed addresses
+    open_executor: bool | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -63,6 +76,38 @@ class Prober:
     def _uint(self, addr: str, sig: str) -> int | None:
         r = self._call(addr, sig)
         return int.from_bytes(r[:32], "big") if r and len(r) >= 32 else None
+
+    def _has_role(self, addr: str, role: bytes, who: str) -> bool | None:
+        data = _sel("hasRole(bytes32,address)") + role + bytes(12) + bytes.fromhex(who[2:])
+        try:
+            r = self.w3.eth.call({"to": addr, "data": data})
+        except Exception:  # noqa: BLE001
+            return None
+        return bool(int.from_bytes(bytes(r)[:32], "big")) if r and len(r) == 32 else None
+
+    def _supports_access_control(self, addr: str) -> bool:
+        return self._has_role(addr, ROLES["DEFAULT_ADMIN_ROLE"], ZERO) is not None
+
+    def check_roles(self, candidates: list[str]) -> None:
+        """Second pass: for every AccessControl contract seen, test which of the
+        probed addresses hold key roles. Also detects an open executor on timelocks."""
+        for n in list(self.seen.values()):
+            if n.kind == "eoa" or not self._supports_access_control(n.address):
+                continue
+            for name, role in ROLES.items():
+                holders = [c for c in candidates if c != n.address and self._has_role(n.address, role, c)]
+                if holders:
+                    n.roles[name] = holders
+            if n.kind == "timelock":
+                n.open_executor = self._has_role(n.address, ROLES["EXECUTOR_ROLE"], ZERO)
+                if n.open_executor:
+                    n.notes.append("executor role is open: anyone can execute a matured operation")
+            for who in n.roles.get("DEFAULT_ADMIN_ROLE", []):
+                c = self.seen.get(who)
+                if c and c.kind == "eoa":
+                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
+                elif c and c.kind == "safe" and c.safe_threshold == 1:
+                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
 
     def _slot_addr(self, addr: str, slot: int) -> str | None:
         v = self.w3.eth.get_storage_at(addr, slot)
@@ -153,7 +198,11 @@ def describe(n: Node) -> str:
         bits.append(f"delay={n.delay}s")
     if n.paused is not None:
         bits.append(f"paused={n.paused}")
+    if n.open_executor is not None:
+        bits.append(f"openExecutor={n.open_executor}")
     s = "  ".join(bits)
+    for role, holders in n.roles.items():
+        s += f"\n    {role}: {', '.join(holders)}"
     for note in n.notes:
         s += f"\n    ! {note}"
     return s

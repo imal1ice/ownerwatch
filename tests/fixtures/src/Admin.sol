@@ -60,6 +60,11 @@ contract Gov {
     function setApp(address a) external { emit SetApp(bytes32(uint256(1)), bytes32(uint256(2)), a); }
 }
 
+contract RoleBox {
+    mapping(bytes32 => mapping(address => bool)) public hasRole;
+    constructor() { hasRole[bytes32(0)][msg.sender] = true; }
+}
+
 contract Token {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function transfer(address to, uint256 v) external { emit Transfer(msg.sender, to, v); }

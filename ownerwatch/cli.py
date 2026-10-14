@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         from .probe import Prober, describe, suggest_config
         prober = Prober(Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30})))
         roots = [prober.probe(x) for x in a.addresses]
+        prober.check_roles(list(prober.seen.keys()))
         if not a.yaml:
             for n in prober.seen.values():
                 print(describe(n))
