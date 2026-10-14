@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 - `ownerwatch probe`: AccessControl role detection, `--roles-from-logs`, open-executor detection, `--markdown` report
 - `ownerwatch hosted`: run a watcher per active on-chain subscriber
 - `ownerwatch test-alert`
