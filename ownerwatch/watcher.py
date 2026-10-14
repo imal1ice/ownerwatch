@@ -261,11 +261,14 @@ class Watcher:
 
     # ---- main loop ----------------------------------------------------------------
     def run_forever(self) -> None:
-        log.info("watching %d contracts and %d treasuries on %s", len(self.admin_addresses),
-                 len(self.cfg.treasuries), self.cfg.chain_name)
+        log.info("watching %d contracts, %d treasuries, %d safes on %s", len(self.admin_addresses),
+                 len(self.cfg.treasuries), len(self.cfg.safes), self.cfg.chain_name)
+        backoff = 0
         while True:
             try:
                 self.poll_once()
+                backoff = 0
             except Exception as e:  # noqa: BLE001
-                log.warning("poll failed: %s", e)
-            time.sleep(self.cfg.poll_interval_seconds)
+                backoff = min(backoff * 2 if backoff else 1, 16)
+                log.warning("poll failed: %s (backing off x%d)", e, backoff)
+            time.sleep(self.cfg.poll_interval_seconds * (backoff or 1))

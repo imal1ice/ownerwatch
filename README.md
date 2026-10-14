@@ -80,7 +80,7 @@ ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --
 
 ## Hosted tier
 
-Don't want to run it? I run it for you, per chain, paid in USDC on-chain through `contracts/src/Subscriptions.sol`: approve, call `subscribe(months, configRef)`, send me the config. No invoices, no accounts, no KYC either way. Deployment address will be listed here once live; until then open an issue.
+Don't want to run it? I run it for you, per chain, paid in USDC on-chain through `contracts/src/Subscriptions.sol`: approve, call `subscribe(months, configRef)`, send me the config. No invoices, no accounts, no KYC either way. Deployment address will be listed here once live; until then open an issue. The operator side is `ownerwatch hosted --rpc ... --subscriptions 0x... --configs configs/`: it starts a watcher for every address with an active subscription and stops it when the subscription lapses.
 
 ```bash
 cd contracts && forge install foundry-rs/forge-std --no-git && forge test

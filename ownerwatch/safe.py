@@ -61,9 +61,15 @@ class SafeQueueWatcher:
 
     # ---- polling --------------------------------------------------------------------
     def _get(self, url: str, **params) -> dict:
-        r = self.session.get(url, params=params, headers=self.headers, timeout=15)
-        r.raise_for_status()
-        return r.json()
+        import time
+        for attempt in range(4):
+            r = self.session.get(url, params=params, headers=self.headers, timeout=15)
+            if r.status_code == 429 and attempt < 3:
+                time.sleep(2 ** attempt)
+                continue
+            r.raise_for_status()
+            return r.json()
+        raise RuntimeError("unreachable")
 
     def poll(self, first_run: bool = False) -> list[Alert]:
         alerts: list[Alert] = []

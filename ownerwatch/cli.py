@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--to-block", type=int, required=True)
     b.add_argument("--chain", default=None, help="chain_name to backfill when the config has several chains")
     sub.add_parser("events", help="list the events in the catalog")
+    h = sub.add_parser("hosted", help="run watchers for every address with an active on-chain subscription")
+    h.add_argument("--rpc", required=True, help="RPC of the chain the Subscriptions contract lives on")
+    h.add_argument("--subscriptions", required=True, help="Subscriptions contract address")
+    h.add_argument("--configs", default="configs", help="directory of <customer-address>.yaml files")
+    h.add_argument("--check-interval", type=int, default=60)
     pr = sub.add_parser("probe", help="inspect the admin surface of addresses and suggest a config")
     pr.add_argument("addresses", nargs="+")
     pr.add_argument("--rpc", required=True)
@@ -42,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "events":
         for s in CATALOG:
             print(f"{s.severity:8} {s.source:18} {s.signature}")
+        return 0
+
+    if a.cmd == "hosted":
+        from .hosted import HostedRunner
+        HostedRunner(a.rpc, a.subscriptions, a.configs, a.check_interval).run_forever()
         return 0
 
     if a.cmd == "probe":

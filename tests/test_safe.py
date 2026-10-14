@@ -2,6 +2,8 @@ from ownerwatch.safe import SafeQueueWatcher, SafeTarget
 
 
 class FakeResp:
+    status_code = 200
+
     def __init__(self, payload):
         self.payload = payload
 
