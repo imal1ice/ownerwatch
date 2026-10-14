@@ -30,7 +30,7 @@ def _tx(h, confs, data="0x", nonce=1):
 
 def test_queue_lifecycle(monkeypatch):
     import ownerwatch.safe as mod
-    monkeypatch.setattr(mod, "describe_call", lambda d: "addOwnerWithThreshold(address,uint256) [0x0d582f13]")
+    monkeypatch.setattr(mod, "describe_call", lambda d, *a: "addOwnerWithThreshold(address,uint256) [0x0d582f13]")
     sess = FakeSession()
     w = SafeQueueWatcher([SafeTarget("0x" + "ff" * 20, "Admin Safe", "eth")], "ethereum", session=sess)
 

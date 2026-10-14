@@ -38,6 +38,10 @@ class SafeState:
 
 
 class SafeQueueWatcher:
+    CHAIN_IDS = {"eth": 1, "base": 8453, "arb1": 42161, "oeth": 10, "matic": 137, "gno": 100, "bnb": 56,
+                 "sep": 11155111, "avax": 43114, "scr": 534352, "linea": 59144, "zkevm": 1101, "mantle": 5000,
+                 "blast": 81457, "celo": 42220, "sonic": 146}
+
     def __init__(self, targets: list[SafeTarget], chain_name: str, api_key: str = "",
                  session: requests.Session | None = None):
         self.targets = targets
@@ -83,7 +87,8 @@ class SafeQueueWatcher:
             live.add(h)
             confs = len(tx.get("confirmations") or [])
             data = tx.get("data") or "0x"
-            call = describe_call(data) if data not in ("0x", None) else "plain value transfer"
+            call = (describe_call(data, self.CHAIN_IDS.get(t.chain), tx.get("to"))
+                    if data not in ("0x", None) else "plain value transfer")
             value_eth = int(tx.get("value") or 0) / 10**18
             summary = (f"nonce {tx.get('nonce')} to {tx.get('to')} value {value_eth:,.4f} calling {call}; "
                        f"{confs}/{threshold} signatures; proposed by {tx.get('proposer') or '?'}")

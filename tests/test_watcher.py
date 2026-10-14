@@ -112,7 +112,7 @@ def test_admin_events_and_treasury_outflow(anvil, artifacts, tmp_path):
 
 def test_nft_native_and_timelock(anvil, artifacts, tmp_path, monkeypatch):
     import ownerwatch.watcher as wmod
-    monkeypatch.setattr(wmod, "describe_call", lambda d: "transferOwnership(address) [0xf2fde38b]")
+    monkeypatch.setattr(wmod, "describe_call", lambda d, *a: "transferOwnership(address) [0xf2fde38b]")
     w3 = anvil
     deployer, other = w3.eth.accounts[0], w3.eth.accounts[1]
     nft = _deploy(w3, *artifacts["NFT"])

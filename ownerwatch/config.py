@@ -56,6 +56,7 @@ class Alerts:
 class Config:
     rpc_url: str
     chain_name: str = "ethereum"
+    explorer_url: str = ""          # e.g. https://etherscan.io; alerts then carry a clickable tx link
     poll_interval_seconds: int = 15
     confirmations: int = 2
     max_block_range: int = 2000
@@ -78,7 +79,7 @@ def _addr(a: str) -> str:
     return Web3.to_checksum_address(a)
 
 
-SHARED_KEYS = ("poll_interval_seconds", "confirmations", "max_block_range", "start_block", "alerts", "safe_api_key")
+SHARED_KEYS = ("explorer_url", "poll_interval_seconds", "confirmations", "max_block_range", "start_block", "alerts", "safe_api_key")
 
 
 def load_all(path: str | Path) -> list[Config]:
@@ -120,6 +121,7 @@ def _build(raw: dict) -> Config:
     cfg = Config(
         rpc_url=raw["rpc_url"],
         chain_name=raw.get("chain_name", "ethereum"),
+        explorer_url=str(raw.get("explorer_url", "") or ""),
         poll_interval_seconds=int(raw.get("poll_interval_seconds", 15)),
         confirmations=int(raw.get("confirmations", 2)),
         max_block_range=int(raw.get("max_block_range", 2000)),

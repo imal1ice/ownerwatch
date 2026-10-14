@@ -1,7 +1,11 @@
-"""Best-effort decoding of timelock payloads via public selector databases.
+"""Best-effort decoding of calldata in timelock and Safe alerts.
 
-Looks up the 4-byte selector on openchain.xyz, falling back to 4byte.directory,
-with an in-memory cache. Fully optional: when offline the raw selector is shown.
+Order of attempts:
+1. Sourcify (verified ABI for the target on this chain): full function + args.
+2. openchain.xyz, then 4byte.directory: function signature only.
+3. Raw selector.
+Every lookup is cached in memory and fully optional; offline you still get
+the selector.
 """
 from __future__ import annotations
 
@@ -10,16 +14,21 @@ import logging
 import requests
 
 log = logging.getLogger("ownerwatch")
-_cache: dict[str, str | None] = {}
+_sel_cache: dict[str, str | None] = {}
+_abi_cache: dict[tuple[int, str], list | None] = {}
+
+
+def _raw(data: bytes | str) -> bytes:
+    return bytes.fromhex(data[2:]) if isinstance(data, str) else bytes(data)
 
 
 def selector_name(data: bytes | str) -> str | None:
-    raw = bytes.fromhex(data[2:]) if isinstance(data, str) else bytes(data)
+    raw = _raw(data)
     if len(raw) < 4:
         return None
     sel = "0x" + raw[:4].hex()
-    if sel in _cache:
-        return _cache[sel]
+    if sel in _sel_cache:
+        return _sel_cache[sel]
     name = None
     try:
         r = requests.get("https://api.openchain.xyz/signature-database/v1/lookup",
@@ -38,14 +47,47 @@ def selector_name(data: bytes | str) -> str | None:
                 name = res[0]["text_signature"]
         except Exception as e:  # noqa: BLE001
             log.debug("4byte lookup failed: %s", e)
-    _cache[sel] = name
+    _sel_cache[sel] = name
     return name
 
 
-def describe_call(data: bytes | str) -> str:
-    raw = bytes.fromhex(data[2:]) if isinstance(data, str) else bytes(data)
+def verified_abi(chain_id: int, address: str) -> list | None:
+    key = (chain_id, address.lower())
+    if key in _abi_cache:
+        return _abi_cache[key]
+    abi = None
+    try:
+        r = requests.get(f"https://sourcify.dev/server/v2/contract/{chain_id}/{address}", params={"fields": "abi"}, timeout=8)
+        if r.status_code == 200:
+            abi = r.json().get("abi") or None
+    except Exception as e:  # noqa: BLE001
+        log.debug("sourcify lookup failed: %s", e)
+    _abi_cache[key] = abi
+    return abi
+
+
+def _fmt(v) -> str:
+    if isinstance(v, (bytes, bytearray)):
+        return "0x" + bytes(v).hex()
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_fmt(x) for x in v) + "]"
+    return str(v)
+
+
+def describe_call(data: bytes | str, chain_id: int | None = None, target: str | None = None) -> str:
+    raw = _raw(data)
     if not raw:
         return "empty calldata"
     sel = "0x" + raw[:4].hex()
+    if chain_id is not None and target:
+        abi = verified_abi(chain_id, target)
+        if abi:
+            try:
+                from web3 import Web3
+                fn, args = Web3().eth.contract(abi=abi).decode_function_input(raw)
+                inner = ", ".join(f"{k}={_fmt(v)}" for k, v in args.items())
+                return f"{fn.fn_name}({inner}) [{sel}, verified]"
+            except Exception as e:  # noqa: BLE001
+                log.debug("abi decode failed for %s: %s", target, e)
     name = selector_name(raw)
     return f"{name} [{sel}]" if name else f"selector {sel}"

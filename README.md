@@ -25,7 +25,7 @@ Every address in your config gets the full catalog:
 
 **Safe queues.** Add a Safe under `safes:` and ownerwatch polls the Safe Transaction Service: you get an alert when a transaction is proposed, and a critical one when it has collected enough signatures to execute. That is the moment to act; the on-chain events above are the record of what already happened.
 
-Timelock `CallScheduled` / `CallExecuted` alerts also show the function being called, resolved through the openchain and 4byte selector databases (falls back to the raw selector offline).
+Timelock and Safe-queue alerts show the call being made: full function and arguments when the target is verified on Sourcify, otherwise the signature from the openchain and 4byte databases, otherwise the raw selector. Set `explorer_url` and every alert carries a clickable transaction link.
 
 Run `ownerwatch events` to print the catalog.
 
@@ -87,7 +87,6 @@ cd contracts && forge install foundry-rs/forge-std --no-git && forge test
 
 ## Roadmap
 
-- Full timelock calldata decoding with verified ABIs (Sourcify)
 - Native balance and NFT alerts for Safe queues (currently on-chain only)
 
 ## Support the project

@@ -51,6 +51,10 @@ class Watcher:
         self.dispatcher = dispatcher
         self.w3 = w3 or Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 30}))
         self.labels = cfg.labels()
+        try:
+            self.chain_id = self.w3.eth.chain_id
+        except Exception:  # noqa: BLE001
+            self.chain_id = None
         self.admin_addresses = [c.address for c in cfg.contracts]
         self.cursor = Cursor(cfg.state_file)
         # decoder contracts: one per event spec, address-less
@@ -176,6 +180,9 @@ class Watcher:
         return n
 
     # ---- decoding -----------------------------------------------------------------
+    def _link(self, tx_hash: str) -> str:
+        return f"{self.cfg.explorer_url.rstrip('/')}/tx/{tx_hash}" if self.cfg.explorer_url and tx_hash.startswith("0x") else tx_hash
+
     def _decode_admin(self, lg) -> Alert | None:
         t0 = _hex(lg["topics"][0])
         spec = BY_TOPIC.get(t0)
@@ -193,11 +200,11 @@ class Watcher:
             args["title"] = (args.get("description") or "").strip().splitlines()[0][:120] if args.get("description") else "(no description)"
         msg = spec.describe.format(**args)
         if spec.name in ("CallScheduled", "CallExecuted"):
-            msg += f" calling {describe_call(args['data'])}"
+            msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'))}"
         return Alert(
             severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
             label=self.labels.get(addr, addr), event=spec.name, source=spec.source,
-            message=msg, block=lg["blockNumber"], tx_hash=_hex(lg["transactionHash"]))
+            message=msg, block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
 
     def _decode_nft(self, lg) -> Alert | None:
         coll_addr = Web3.to_checksum_address(lg["address"])
@@ -229,7 +236,7 @@ class Watcher:
         return Alert(
             severity=spec.severity, chain=self.cfg.chain_name, contract=src, label=treasury.label,
             event=spec.name, source=spec.source, message=msg,
-            block=lg["blockNumber"], tx_hash=_hex(lg["transactionHash"]))
+            block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
 
     def _decode_transfer(self, lg) -> Alert | None:
         token_addr = Web3.to_checksum_address(lg["address"])
@@ -250,7 +257,7 @@ class Watcher:
         return Alert(
             severity=TRANSFER_SPEC.severity, chain=self.cfg.chain_name, contract=src,
             label=treasury.label, event="Transfer", source="ERC-20", message=msg,
-            block=lg["blockNumber"], tx_hash=_hex(lg["transactionHash"]))
+            block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
 
     # ---- main loop ----------------------------------------------------------------
     def run_forever(self) -> None:

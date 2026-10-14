@@ -2,6 +2,7 @@
 
 rpc_url: "https://rpc.flashbots.net"   # any JSON-RPC endpoint; this public one accepts wide eth_getLogs ranges
 chain_name: "ethereum"
+explorer_url: "https://etherscan.io"    # optional; alerts get a clickable tx link
 
 poll_interval_seconds: 15
 confirmations: 2          # wait this many blocks before reporting, to ride out small reorgs
