@@ -25,7 +25,8 @@ def test_every_sink_called_and_clipped(monkeypatch):
     d.send(long)
     urls = [c[0] for c in calls]
     assert urls == ["https://d", "https://s", "https://api.telegram.org/bott/sendMessage", "https://w"]
-    assert len(calls[0][1]["content"]) == 2000 and calls[0][1]["content"].endswith("…")
+    embed = calls[0][1]["embeds"][0]
+    assert embed["color"] == 0xE74C3C and len(embed["description"]) == 4096 and embed["title"].startswith("[CRITICAL] L: ERC-1967.Upgraded")
     assert len(calls[1][1]["text"]) == 3000
     assert len(calls[2][1]["text"]) == 4096 and calls[2][1]["chat_id"] == "c"
     assert json.loads(calls[3][2])["event"] == "Upgraded"

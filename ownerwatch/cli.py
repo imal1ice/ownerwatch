@@ -34,8 +34,9 @@ def main(argv: list[str] | None = None) -> int:
     h.add_argument("--configs", default="configs", help="directory of <customer-address>.yaml files")
     h.add_argument("--check-interval", type=int, default=60)
     pr = sub.add_parser("probe", help="inspect the admin surface of addresses and suggest a config")
-    pr.add_argument("addresses", nargs="+")
-    pr.add_argument("--rpc", required=True)
+    pr.add_argument("addresses", nargs="*")
+    pr.add_argument("--rpc", default=None)
+    pr.add_argument("--config", default=None, help="probe every contract and Safe listed in this config (per chain)")
     pr.add_argument("--chain-name", default="ethereum")
     pr.add_argument("--safe-chain", default=None, help="Safe Tx Service key (eth, base, arb1, oeth, ...) to add safes: entries")
     pr.add_argument("--label", default="Protocol")
@@ -61,6 +62,22 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "probe":
         from web3 import Web3
         from .probe import Prober, describe, markdown_report, suggest_config
+        if a.config:
+            # one report per chain, addresses taken from the config
+            for cfg in load_all(a.config):
+                prober = Prober(Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 30})))
+                addrs = [c.address for c in cfg.contracts] + [s_.address for s_ in cfg.safes]
+                roots = [prober.probe(x) for x in dict.fromkeys(addrs)]
+                prober.check_roles(list(prober.seen.keys()))
+                if a.markdown:
+                    print(markdown_report(prober, a.label, cfg.chain_name, roots))
+                else:
+                    print(f"# {cfg.chain_name}")
+                    for n in prober.seen.values():
+                        print(describe(n))
+            return 0
+        if not a.rpc or not a.addresses:
+            p.error("probe needs --rpc and at least one address, or --config")
         prober = Prober(Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30})))
         roots = [prober.probe(x) for x in a.addresses]
         prober.check_roles(list(prober.seen.keys()))

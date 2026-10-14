@@ -66,9 +66,22 @@ class Dispatcher:
     def _clip(text: str, limit: int) -> str:
         return text if len(text) <= limit else text[: limit - 1] + "…"
 
+    COLORS = {"info": 0x95A5A6, "medium": 0xF1C40F, "high": 0xE67E22, "critical": 0xE74C3C}
+
     def _discord(self, alert: Alert, text: str) -> None:
         if self.cfg.discord_webhook:
-            requests.post(self.cfg.discord_webhook, json={"content": self._clip(text, 2000)}, timeout=10).raise_for_status()
+            embed = {
+                "title": self._clip(f"[{alert.severity.upper()}] {alert.label}: {alert.source}.{alert.event}", 256),
+                "description": self._clip(alert.message, 4096),
+                "color": self.COLORS.get(alert.severity, 0x95A5A6),
+                "fields": [
+                    {"name": "Contract", "value": f"`{alert.contract}`", "inline": True},
+                    {"name": "Chain", "value": alert.chain, "inline": True},
+                    {"name": "Block", "value": str(alert.block), "inline": True},
+                    {"name": "Tx", "value": self._clip(alert.tx_hash, 1024), "inline": False},
+                ],
+            }
+            requests.post(self.cfg.discord_webhook, json={"embeds": [embed]}, timeout=10).raise_for_status()
 
     def _slack(self, alert: Alert, text: str) -> None:
         if self.cfg.slack_webhook:

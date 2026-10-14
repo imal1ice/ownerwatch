@@ -54,6 +54,7 @@ Several chains in one process: put shared settings at the top level and a `chain
 ```bash
 ownerwatch probe --rpc https://eth.drpc.org --safe-chain eth --label Acme 0xYourProxy 0xYourSafe
 ownerwatch probe --rpc $ARCHIVE_RPC --roles-from-logs --from-block 19000000 0xAccessControlContract   # lists every current role holder
+ownerwatch probe --config config.yaml --markdown --label Acme > admin-surface.md   # monthly report of everything you watch
 ```
 
 Other commands:

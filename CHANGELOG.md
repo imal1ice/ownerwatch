@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `probe --config`: report on every contract and Safe in a config, per chain
+- Discord alerts are colour-coded embeds with contract, chain, block and tx fields
 - Safe execution events, including module executions that bypass the signer queue
 - Governor ProposalCreated alerts list each action's target and decoded call
 

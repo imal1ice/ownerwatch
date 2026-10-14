@@ -59,3 +59,14 @@ def test_markdown_report(anvil, artifacts):  # noqa: F811
     assert md.startswith("# Test admin surface on anvil")
     assert "| contract |" in md and "controlled by an EOA" in md
     assert "(contract) -> " in md and "(eoa)" in md
+
+
+def test_probe_from_config(anvil, artifacts, tmp_path, capsys):  # noqa: F811
+    from ownerwatch.cli import main
+    w3 = anvil
+    admin = _deploy(w3, *artifacts["Admin"])
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(f"rpc_url: {w3.provider.endpoint_uri}\nchain_name: anvil\ncontracts:\n  - address: '{admin.address}'\n    label: A\n")
+    assert main(["probe", "--config", str(cfg), "--markdown", "--label", "Acme"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("# Acme admin surface on anvil") and "controlled by an EOA" in out
