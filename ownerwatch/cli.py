@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--to-block", type=int, required=True)
     b.add_argument("--chain", default=None, help="chain_name to backfill when the config has several chains")
     sub.add_parser("events", help="list the events in the catalog")
+    ta = sub.add_parser("test-alert", help="send a test alert through every configured sink")
+    ta.add_argument("--config", default="config.yaml")
     h = sub.add_parser("hosted", help="run watchers for every address with an active on-chain subscription")
     h.add_argument("--rpc", required=True, help="RPC of the chain the Subscriptions contract lives on")
     h.add_argument("--subscriptions", required=True, help="Subscriptions contract address")
@@ -77,6 +79,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cfgs = load_all(a.config)
+    if a.cmd == "test-alert":
+        from .alerts import Alert
+        for cfg in cfgs:
+            Dispatcher(cfg.alerts).send(Alert("info", cfg.chain_name, "0x" + "00" * 20, "ownerwatch", "TestAlert", "ownerwatch",
+                                              "test alert: your sinks are wired up", 0, "-"))
+        return 0
     if a.cmd == "backfill":
         if len(cfgs) > 1 and not a.chain:
             p.error("--chain is required for a multi-chain config")
