@@ -26,13 +26,16 @@ SUBS_ABI = [
      "inputs": [{"name": "account", "type": "address"}], "outputs": [{"name": "", "type": "bool"}]},
     {"type": "function", "name": "expiry", "stateMutability": "view",
      "inputs": [{"name": "", "type": "address"}], "outputs": [{"name": "", "type": "uint256"}]},
+    {"type": "function", "name": "chainCount", "stateMutability": "view",
+     "inputs": [{"name": "", "type": "address"}], "outputs": [{"name": "", "type": "uint256"}]},
 ]
 
 
 class Customer:
-    def __init__(self, address: str, path: Path):
+    def __init__(self, address: str, path: Path, max_chains: int = 0):
         self.address = address
         self.path = path
+        self.max_chains = max_chains
         self.mtime = 0.0
         self.stop = threading.Event()
         self.threads: list[threading.Thread] = []
@@ -41,6 +44,10 @@ class Customer:
         self.stop.clear()
         self.mtime = self.path.stat().st_mtime
         cfgs = load_all(self.path)
+        if self.max_chains and len(cfgs) > self.max_chains:
+            log.warning("%s paid for %d chains but config has %d; running the first %d",
+                        self.address, self.max_chains, len(cfgs), self.max_chains)
+            cfgs = cfgs[: self.max_chains]
         for cfg in cfgs:
             cfg.state_file = str(Path("state") / "hosted" / self.address / f"{cfg.chain_name}.json")
             w = Watcher(cfg, Dispatcher(cfg.alerts))
@@ -79,6 +86,12 @@ class HostedRunner:
     def is_active(self, address: str) -> bool:
         return bool(self.subs.functions.isActive(address).call())
 
+    def paid_chains(self, address: str) -> int:
+        try:
+            return int(self.subs.functions.chainCount(address).call())
+        except Exception:  # noqa: BLE001
+            return 0
+
     def reconcile(self) -> None:
         files = {}
         for p in self.dir.glob("*.yaml"):
@@ -94,7 +107,7 @@ class HostedRunner:
                 continue
             cust = self.customers.get(addr)
             if active and cust is None:
-                cust = Customer(addr, path)
+                cust = Customer(addr, path, self.paid_chains(addr))
                 try:
                     cust.start()
                     self.customers[addr] = cust
