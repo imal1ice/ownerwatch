@@ -30,5 +30,6 @@ def test_signature_call_decode():
     from ownerwatch.decode import describe_signature_call
     data = "0x" + "00" * 12 + "11" * 20 + (5).to_bytes(32, "big").hex()
     assert describe_signature_call("transfer(address,uint256)", data) == "transfer(0x" + "11" * 20 + ", 5)"
+    assert describe_signature_call("transfer(address,uint256)", "0xa9059cbb" + data[2:]) == "transfer(0x" + "11" * 20 + ", 5)"
     assert describe_signature_call("resume()", "0x") == "resume()"
     assert describe_signature_call("broken", "0x") == "broken"

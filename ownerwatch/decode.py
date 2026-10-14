@@ -102,7 +102,12 @@ def describe_signature_call(signature: str, data: bytes | str) -> str:
         types = [t.strip() for t in types_str.split(",") if t.strip()]
         if not types:
             return signature
-        values = abi_decode(types, raw)
+        try:
+            values = abi_decode(types, raw)
+        except Exception:  # noqa: BLE001
+            if len(raw) % 32 != 4:
+                raise
+            values = abi_decode(types, raw[4:])   # proposer included the selector as well as the signature
         return f"{signature[:signature.index('(')]}({', '.join(_fmt(v) for v in values)})"
     except Exception as e:  # noqa: BLE001
         log.debug("signature decode failed for %s: %s", signature, e)

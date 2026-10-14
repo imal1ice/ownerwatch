@@ -69,7 +69,7 @@ Each alert is one Discord or Telegram message. Severity is in the first bracket;
 ## Uniswap GovernorBravo proposals, blocks 22,020,000 to 22,030,000
 
 ```
-Governor.ProposalCreated: proposal 81 created by 0xf665F2eD351696817898fe0Ace20c5C1Bc3c5796 with 1 targets: # Uniswap Unleashed | actions: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984: transfer(address,uint256)
+Governor.ProposalCreated: proposal 81 created by 0xf665F2eD351696817898fe0Ace20c5C1Bc3c5796 with 1 targets: # Uniswap Unleashed | actions: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984: transfer(0x5069a64bc6616dec1584ee0500b7813a9b680f7e, 20320405000000000000000000)
 block 22024608 tx https://etherscan.io/tx/0xb0aa5c0d57448dfd8ed60ed87af671fba164732d2e8d1079b6cbc0f53d0ee637
 --
 Governor.ProposalCreated: proposal 82 created by 0x683a4F9915D6216f73d6Df50151725036bD26C02 with 6 targets: # Unichain and Uniswap v4 Liquidity Incentives | actions: 0x7c8406384f7a5c147a6ADd16407803BE146147E4: acceptOwnership(); 0x77A3460801FA71aC747e34C1C5582ee472B906b9: acceptOwnership(); 0xEC645C3750021Db8b155EF12094bb0395e8c107c: acceptOwnership(); 0x7c8406384f7a5c147a6ADd16407803BE146147E4: resume(); 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984: approve(0x7c8406384f7a5c147a6add16407803be146147e4, 7588532000000000000000000); ... 1 more
