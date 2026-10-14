@@ -34,3 +34,17 @@ def test_probe_roles(anvil, artifacts):  # noqa: F811
     assert n.roles == {"DEFAULT_ADMIN_ROLE": [w3.eth.accounts[0]]}
     assert any("DEFAULT_ADMIN_ROLE held by EOA" in x for x in n.notes)
     assert "DEFAULT_ADMIN_ROLE:" in describe(n)
+
+
+def test_role_history_from_logs(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    admin = _deploy(w3, *artifacts["Admin"])
+    a, b = w3.eth.accounts[0], w3.eth.accounts[1]
+    admin.functions.grantRole(b"\x00" * 32, b).transact({"from": a})
+    w3.eth.wait_for_transaction_receipt(admin.functions.grantRole(b"\x11" * 32, a).transact({"from": a}))
+    p = Prober(w3)
+    p.probe(admin.address)
+    out = p.role_history(admin.address)
+    assert out["DEFAULT_ADMIN_ROLE"] == [b]
+    assert out["0x" + "11" * 32] == [a]
+    assert any("DEFAULT_ADMIN_ROLE held by EOA" in x for x in p.seen[admin.address].notes)

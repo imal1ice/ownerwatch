@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 import yaml
 from web3 import Web3
 
+from .events import topic0
+
 IMPL_SLOT = int("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", 16)
 ADMIN_SLOT = int("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103", 16)
 BEACON_SLOT = int("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50", 16)
@@ -108,6 +110,47 @@ class Prober:
                     n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
                 elif c and c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
+
+    def _get_logs_split(self, params: dict, from_block: int, to_block: int) -> list:
+        try:
+            return self.w3.eth.get_logs({**params, "fromBlock": from_block, "toBlock": to_block})
+        except Exception:  # noqa: BLE001
+            if to_block - from_block < 200:
+                raise
+            mid = (from_block + to_block) // 2
+            return self._get_logs_split(params, from_block, mid) + self._get_logs_split(params, mid + 1, to_block)
+
+    def role_history(self, addr: str, from_block: int = 0) -> dict[str, list[str]]:
+        """Replay RoleGranted/RoleRevoked logs to list current holders per role.
+        Needs an RPC that serves historical logs; wide ranges are split on error."""
+        addr = Web3.to_checksum_address(addr)
+        granted, revoked = "0x" + Web3.keccak(text="RoleGranted(bytes32,address,address)").hex().lstrip("0x"), \
+            "0x" + Web3.keccak(text="RoleRevoked(bytes32,address,address)").hex().lstrip("0x")
+        logs = self._get_logs_split({"address": addr, "topics": [[granted, revoked]]}, from_block, self.w3.eth.block_number)
+        logs.sort(key=lambda l: (l["blockNumber"], l["logIndex"]))
+        names = {("0x" + bytes(v).hex()): k for k, v in ROLES.items()}
+        holders: dict[str, set[str]] = {}
+        for lg in logs:
+            t0 = "0x" + bytes(lg["topics"][0]).hex()
+            role = "0x" + bytes(lg["topics"][1]).hex()
+            who = Web3.to_checksum_address("0x" + bytes(lg["topics"][2])[-20:].hex())
+            name = names.get(role, role)
+            if t0 == granted:
+                holders.setdefault(name, set()).add(who)
+            else:
+                holders.get(name, set()).discard(who)
+        out = {k: sorted(v) for k, v in holders.items() if v}
+        n = self.seen.get(addr)
+        if n is not None:
+            for k, v in out.items():
+                n.roles[k] = v
+            for who in out.get("DEFAULT_ADMIN_ROLE", []):
+                c = self.probe(who, depth=2)
+                if c.kind == "eoa":
+                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
+                elif c.kind == "safe" and c.safe_threshold == 1:
+                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
+        return out
 
     def _slot_addr(self, addr: str, slot: int) -> str | None:
         v = self.w3.eth.get_storage_at(addr, slot)

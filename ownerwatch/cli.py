@@ -31,6 +31,9 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--safe-chain", default=None, help="Safe Tx Service key (eth, base, arb1, oeth, ...) to add safes: entries")
     pr.add_argument("--label", default="Protocol")
     pr.add_argument("--yaml", action="store_true", help="print only the suggested config")
+    pr.add_argument("--roles-from-logs", action="store_true",
+                    help="replay RoleGranted/RoleRevoked logs to list every current role holder (needs an RPC with log history)")
+    pr.add_argument("--from-block", type=int, default=0, help="with --roles-from-logs: contract creation block, to limit the scan")
     a = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
@@ -46,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
         prober = Prober(Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30})))
         roots = [prober.probe(x) for x in a.addresses]
         prober.check_roles(list(prober.seen.keys()))
+        if a.roles_from_logs:
+            for x in a.addresses:
+                try:
+                    prober.role_history(x, a.from_block)
+                except Exception as e:  # noqa: BLE001
+                    print(f"# role history for {x} failed: {e}", file=sys.stderr)
         if not a.yaml:
             for n in prober.seen.values():
                 print(describe(n))
