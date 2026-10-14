@@ -58,3 +58,16 @@ def test_heartbeat_only_when_configured(monkeypatch):
     assert gets == []
     Dispatcher(Alerts(heartbeat_url="https://hc/ping")).heartbeat()
     assert gets == ["https://hc/ping"]
+
+
+def test_daily_digest_fires_once_per_day_change():
+    got = []
+    d = Dispatcher(Alerts(daily_digest=True), sinks=[got.append])
+    assert d.maybe_digest("ethereum", 100, today="2026-10-14") is False     # first poll just records the day
+    d.send(Alert("critical", "ethereum", "0x" + "11" * 20, "L", "Upgraded", "ERC-1967", "m", 1, "-"))
+    assert d.maybe_digest("ethereum", 200, today="2026-10-14") is False     # same day, nothing
+    assert d.maybe_digest("ethereum", 300, today="2026-10-15") is True
+    digest = got[-1]
+    assert digest.event == "DailyDigest" and "critical: 1" in digest.message and "2026-10-14" in digest.message
+    assert d.counts == {} and d.maybe_digest("ethereum", 400, today="2026-10-15") is False
+    assert Dispatcher(Alerts()).maybe_digest("x", 1, today="2026-10-15") is False   # off by default

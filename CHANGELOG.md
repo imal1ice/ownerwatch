@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- `daily_digest`: once-a-day summary of alerts by severity, so quiet and alive are distinguishable in the channel
+
 ## 0.7.0
 - `probe --json`
 - `examples/github-action-drift.yml`: weekly admin-surface drift check for a protocol's own repo

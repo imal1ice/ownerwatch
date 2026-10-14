@@ -51,6 +51,7 @@ class Alerts:
     telegram_chat_id: str = ""
     webhook_url: str = ""
     heartbeat_url: str = ""        # GET after every successful poll (healthchecks.io, Better Uptime, cron monitors)
+    daily_digest: bool = False     # once a day (UTC) post a one-line summary: alerts by severity, head block, uptime
     min_severity: str = "info"
 
 

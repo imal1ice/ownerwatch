@@ -39,9 +39,12 @@ class Dispatcher:
         self.cfg = cfg
         self.min_rank = severity_rank(cfg.min_severity)
         self.extra_sinks = sinks or []  # callables, used by tests
+        self.counts: dict[str, int] = {}   # severity -> alerts sent today
+        self.digest_day: str | None = None
 
     def send(self, alert: Alert) -> None:
         print(alert.text(), file=sys.stdout, flush=True)
+        self.counts[alert.severity] = self.counts.get(alert.severity, 0) + 1
         if severity_rank(alert.severity) < self.min_rank:
             return
         for fn in self.extra_sinks:
@@ -52,6 +55,24 @@ class Dispatcher:
                 fn(alert, text)
             except Exception as e:  # noqa: BLE001
                 log.warning("%s delivery failed: %s", name, e)
+
+    def maybe_digest(self, chain: str, head: int, today: str | None = None) -> bool:
+        """At the first poll of each UTC day, post yesterday's summary. Returns True when sent."""
+        import datetime as _dt
+        today = today or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+        if not self.cfg.daily_digest:
+            return False
+        if self.digest_day is None:
+            self.digest_day = today
+            return False
+        if today == self.digest_day:
+            return False
+        summary = ", ".join(f"{k}: {self.counts.get(k, 0)}" for k in ("critical", "high", "medium", "info"))
+        self.send(Alert("info", chain, "-", "ownerwatch", "DailyDigest", "ownerwatch",
+                        f"digest for {self.digest_day}: {summary}; watcher alive, head block {head}", head, "-"))
+        self.counts = {}
+        self.digest_day = today
+        return True
 
     def heartbeat(self) -> None:
         """Ping the dead-man's-switch URL. Silence there means the watcher is down."""

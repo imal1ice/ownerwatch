@@ -51,3 +51,4 @@ alerts:
   webhook_url: ""                # generic JSON POST
   heartbeat_url: ""              # pinged after every successful poll; point it at healthchecks.io so you learn when ownerwatch itself dies
   min_severity: "info"           # info | medium | high | critical
+  daily_digest: false            # true: one summary line per UTC day so a quiet day still shows the watcher is alive

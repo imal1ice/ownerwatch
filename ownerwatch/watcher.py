@@ -101,6 +101,8 @@ class Watcher:
         n += self._check_native(head)
         n += self._check_safes()
         self.dispatcher.heartbeat()
+        if self.dispatcher.maybe_digest(self.cfg.chain_name, head):
+            n += 1
         return n
 
     def _check_safes(self) -> int:
