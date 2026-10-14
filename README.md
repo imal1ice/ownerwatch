@@ -57,6 +57,11 @@ ownerwatch probe --rpc $ARCHIVE_RPC --roles-from-logs --from-block 19000000 0xAc
 ownerwatch probe --config config.yaml --markdown --label Acme > admin-surface.md   # monthly report of everything you watch
 ```
 
+Want that check in CI? `examples/github-action-drift.yml` re-probes weekly and fails when a signer, delay or proxy admin changes from the committed report.
+
+```bash
+```
+
 Other commands:
 
 ```bash
