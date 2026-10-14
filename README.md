@@ -66,7 +66,7 @@ ownerwatch backfill --from-block N --to-block M   # replay history, prints what 
 ownerwatch events                           # list the catalog
 ```
 
-See [docs/sample-alerts.md](docs/sample-alerts.md) for real alerts replayed from mainnet history.
+See [docs/what-to-watch.md](docs/what-to-watch.md) for the control-graph model behind the catalog, and [docs/sample-alerts.md](docs/sample-alerts.md) for real alerts replayed from mainnet history.
 
 ## Examples
 
