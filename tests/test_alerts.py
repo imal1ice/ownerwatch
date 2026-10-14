@@ -48,3 +48,12 @@ def test_one_dead_sink_does_not_block_others(monkeypatch):
     d = Dispatcher(Alerts(discord_webhook="https://d", slack_webhook="https://s"))
     d.send(Alert("info", "x", "0x" + "11" * 20, "L", "E", "S", "m", 1, "-"))
     assert calls == ["https://s"]
+
+
+def test_heartbeat_only_when_configured(monkeypatch):
+    gets = []
+    monkeypatch.setattr(mod.requests, "get", lambda url, timeout=None: gets.append(url))
+    Dispatcher(Alerts()).heartbeat()
+    assert gets == []
+    Dispatcher(Alerts(heartbeat_url="https://hc/ping")).heartbeat()
+    assert gets == ["https://hc/ping"]

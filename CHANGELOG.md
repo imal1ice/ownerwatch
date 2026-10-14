@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `heartbeat_url`: dead-man's-switch ping after every successful poll
 - Slack sink; Discord, Slack and Telegram messages clipped to their limits; one failing sink no longer blocks the others
 - Subscriptions contract hardened after review: price slippage guard (`maxCost`), per-chain pricing enforced on-chain and by the runner, two-step ownership, zero-address checks, USDT-style tokens handled, fee-on-transfer rejected, effects before interactions, `PERIOD` naming
 - Aave V3 (addresses provider, configurator), Morpho Blue, MetaMorpho and Lido core events

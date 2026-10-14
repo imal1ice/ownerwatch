@@ -49,4 +49,5 @@ alerts:
   telegram_bot_token: ""
   telegram_chat_id: ""
   webhook_url: ""                # generic JSON POST
+  heartbeat_url: ""              # pinged after every successful poll; point it at healthchecks.io so you learn when ownerwatch itself dies
   min_severity: "info"           # info | medium | high | critical

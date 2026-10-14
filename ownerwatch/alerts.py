@@ -53,6 +53,15 @@ class Dispatcher:
             except Exception as e:  # noqa: BLE001
                 log.warning("%s delivery failed: %s", name, e)
 
+    def heartbeat(self) -> None:
+        """Ping the dead-man's-switch URL. Silence there means the watcher is down."""
+        if not self.cfg.heartbeat_url:
+            return
+        try:
+            requests.get(self.cfg.heartbeat_url, timeout=10)
+        except Exception as e:  # noqa: BLE001
+            log.warning("heartbeat failed: %s", e)
+
     @staticmethod
     def _clip(text: str, limit: int) -> str:
         return text if len(text) <= limit else text[: limit - 1] + "…"

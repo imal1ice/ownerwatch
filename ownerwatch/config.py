@@ -50,6 +50,7 @@ class Alerts:
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     webhook_url: str = ""
+    heartbeat_url: str = ""        # GET after every successful poll (healthchecks.io, Better Uptime, cron monitors)
     min_severity: str = "info"
 
 

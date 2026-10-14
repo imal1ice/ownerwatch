@@ -100,6 +100,7 @@ class Watcher:
             start = end + 1
         n += self._check_native(head)
         n += self._check_safes()
+        self.dispatcher.heartbeat()
         return n
 
     def _check_safes(self) -> int:

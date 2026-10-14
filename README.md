@@ -80,6 +80,7 @@ ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --
 - Waits `confirmations` blocks behind the head so small reorgs don't produce ghost alerts.
 - Persists a block cursor to `state/`, so a restart resumes where it left off with no duplicates.
 - Alert delivery never stops the poller: a dead webhook is logged and skipped.
+- Set `heartbeat_url` to a dead-man's-switch (healthchecks.io or similar) and you get paged when ownerwatch itself stops polling. Quiet and dead must not look the same.
 - Works on any EVM chain, one process can watch several.
 
 ## Hosted tier
