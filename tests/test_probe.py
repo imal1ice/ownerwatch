@@ -70,3 +70,14 @@ def test_probe_from_config(anvil, artifacts, tmp_path, capsys):  # noqa: F811
     assert main(["probe", "--config", str(cfg), "--markdown", "--label", "Acme"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("# Acme admin surface on anvil") and "controlled by an EOA" in out
+
+
+def test_probe_json(anvil, artifacts, tmp_path, capsys):  # noqa: F811
+    import json
+    from ownerwatch.cli import main
+    w3 = anvil
+    admin = _deploy(w3, *artifacts["Admin"])
+    assert main(["probe", "--rpc", w3.provider.endpoint_uri, "--json", admin.address]) == 0
+    d = json.loads(capsys.readouterr().out)
+    kinds = {n["address"]: n["kind"] for n in d["nodes"]}
+    assert kinds[admin.address] == "contract" and kinds[w3.eth.accounts[0]] == "eoa"

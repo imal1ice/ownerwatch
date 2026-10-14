@@ -42,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--label", default="Protocol")
     pr.add_argument("--yaml", action="store_true", help="print only the suggested config")
     pr.add_argument("--markdown", action="store_true", help="print a short admin-surface report in markdown")
+    pr.add_argument("--json", action="store_true", help="print the probed nodes as JSON")
     pr.add_argument("--roles-from-logs", action="store_true",
                     help="replay RoleGranted/RoleRevoked logs to list every current role holder (needs an RPC with log history)")
     pr.add_argument("--from-block", type=int, default=0, help="with --roles-from-logs: contract creation block, to limit the scan")
@@ -71,6 +72,9 @@ def main(argv: list[str] | None = None) -> int:
                 prober.check_roles(list(prober.seen.keys()))
                 if a.markdown:
                     print(markdown_report(prober, a.label, cfg.chain_name, roots))
+                elif a.json:
+                    import dataclasses, json as _json
+                    print(_json.dumps({"chain": cfg.chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()]}, indent=2))
                 else:
                     print(f"# {cfg.chain_name}")
                     for n in prober.seen.values():
@@ -89,6 +93,10 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"# role history for {x} failed: {e}", file=sys.stderr)
         if a.markdown:
             print(markdown_report(prober, a.label, a.chain_name, roots))
+            return 0
+        if a.json:
+            import dataclasses, json as _json
+            print(_json.dumps({"chain": a.chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()]}, indent=2))
             return 0
         if not a.yaml:
             for n in prober.seen.values():

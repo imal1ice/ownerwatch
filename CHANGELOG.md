@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `probe --json`
 - `examples/github-action-drift.yml`: weekly admin-surface drift check for a protocol's own repo
 - `probe --config`: report on every contract and Safe in a config, per chain
 - Discord alerts are colour-coded embeds with contract, chain, block and tx fields
