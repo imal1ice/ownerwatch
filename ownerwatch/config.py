@@ -16,10 +16,18 @@ class Token:
 
 
 @dataclass
+class Collection:
+    address: str
+    label: str
+
+
+@dataclass
 class Treasury:
     address: str
     label: str
     tokens: list[Token]
+    nfts: list[Collection] = field(default_factory=list)
+    min_native_drop: float | None = None   # alert if native balance falls by >= this many ETH between polls
 
 
 @dataclass
@@ -67,7 +75,10 @@ def load(path: str | Path) -> Config:
     for t in raw.get("treasuries", []) or []:
         tokens = [Token(_addr(k["address"]), k.get("symbol", "?"), int(k.get("decimals", 18)), float(k.get("min_amount", 0)))
                   for k in t.get("tokens", []) or []]
-        treasuries.append(Treasury(_addr(t["address"]), t.get("label", t["address"]), tokens))
+        nfts = [Collection(_addr(n["address"]), n.get("label", n["address"])) for n in t.get("nfts", []) or []]
+        drop = t.get("min_native_drop")
+        treasuries.append(Treasury(_addr(t["address"]), t.get("label", t["address"]), tokens, nfts,
+                                   float(drop) if drop is not None else None))
     alerts = Alerts(**{k: v for k, v in (raw.get("alerts") or {}).items() if k in Alerts.__dataclass_fields__})
     cfg = Config(
         rpc_url=raw["rpc_url"],

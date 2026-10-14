@@ -131,6 +131,24 @@ TRANSFER_SPEC = EventSpec(
     "high", "{amount} {symbol} sent from {from} to {to}", "ERC-20")
 
 
+ERC721_TRANSFER_SPEC = EventSpec(
+    "Transfer", "Transfer(address,address,uint256)",
+    _abi("Transfer", _inp("from", "address", True), _inp("to", "address", True), _inp("tokenId", "uint256", True)),
+    "high", "NFT #{tokenId} of {collection} sent from {from} to {to}", "ERC-721")
+
+ERC1155_SINGLE_SPEC = EventSpec(
+    "TransferSingle", "TransferSingle(address,address,address,uint256,uint256)",
+    _abi("TransferSingle", _inp("operator", "address", True), _inp("from", "address", True), _inp("to", "address", True),
+         _inp("id", "uint256", False), _inp("value", "uint256", False)),
+    "high", "{value} of token #{id} of {collection} sent from {from} to {to}", "ERC-1155")
+
+ERC1155_BATCH_SPEC = EventSpec(
+    "TransferBatch", "TransferBatch(address,address,address,uint256[],uint256[])",
+    _abi("TransferBatch", _inp("operator", "address", True), _inp("from", "address", True), _inp("to", "address", True),
+         _inp("ids", "uint256[]", False), _inp("values", "uint256[]", False)),
+    "high", "batch of {count} token ids of {collection} sent from {from} to {to}", "ERC-1155")
+
+
 def topic0(signature: str) -> str:
     return Web3.keccak(text=signature).hex()
 
@@ -141,6 +159,7 @@ def _norm(t: str) -> str:
 
 BY_TOPIC: dict[str, EventSpec] = {_norm(topic0(s.signature)): s for s in CATALOG}
 TRANSFER_TOPIC = _norm(topic0(TRANSFER_SPEC.signature))
+ERC1155_TOPICS = [_norm(topic0(ERC1155_SINGLE_SPEC.signature)), _norm(topic0(ERC1155_BATCH_SPEC.signature))]
 ADMIN_TOPICS: list[str] = list(BY_TOPIC.keys())
 
 

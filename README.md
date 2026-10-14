@@ -17,6 +17,10 @@ Every address in your config gets the full catalog:
 | TimelockController | CallScheduled, CallExecuted, Cancelled, MinDelayChange | high / critical |
 | Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler | critical / high |
 | ERC-20 treasuries | Transfer out above a threshold you set | high |
+| NFT treasuries | Any ERC-721 or ERC-1155 transfer out | high |
+| Native balance | ETH balance of a treasury falls by more than a threshold between polls | high |
+
+Timelock `CallScheduled` / `CallExecuted` alerts also show the function being called, resolved through the openchain and 4byte selector databases (falls back to the raw selector offline).
 
 Run `ownerwatch events` to print the catalog.
 
@@ -53,10 +57,10 @@ ownerwatch events                           # list the catalog
 
 ## Roadmap
 
-- Native balance drops and ERC-721 / ERC-1155 outflows
-- Timelock payload decoding (show the function being scheduled, not just the target)
-- A hosted tier for teams that don't want to run infra, paid in USDC on-chain
+- Full timelock calldata decoding with verified ABIs (Sourcify)
 - Multi-chain in one process
+- Safe transaction queue watching (pending, not just executed)
+- A hosted tier for teams that don't want to run infra, paid in USDC on-chain
 
 ## Support the project
 

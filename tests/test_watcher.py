@@ -12,7 +12,7 @@ import pytest
 from web3 import Web3
 
 from ownerwatch.alerts import Dispatcher
-from ownerwatch.config import Alerts, Config, Contract, Token, Treasury
+from ownerwatch.config import Alerts, Collection, Config, Contract, Token, Treasury
 from ownerwatch.watcher import Watcher
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -48,7 +48,7 @@ def anvil():
 def artifacts():
     subprocess.run(["forge", "build", "--root", str(FIXTURES)], check=True, capture_output=True)
     out = {}
-    for name in ("Admin", "Token"):
+    for name in ("Admin", "Token", "NFT", "Multi", "Timelock"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out
@@ -108,3 +108,43 @@ def test_admin_events_and_treasury_outflow(anvil, artifacts, tmp_path):
     w2 = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got2.append]), w3=w3)
     assert w2.poll_once() == 1
     assert got2[0].event == "Paused"
+
+
+def test_nft_native_and_timelock(anvil, artifacts, tmp_path, monkeypatch):
+    import ownerwatch.watcher as wmod
+    monkeypatch.setattr(wmod, "describe_call", lambda d: "transferOwnership(address) [0xf2fde38b]")
+    w3 = anvil
+    deployer, other = w3.eth.accounts[0], w3.eth.accounts[1]
+    nft = _deploy(w3, *artifacts["NFT"])
+    multi = _deploy(w3, *artifacts["Multi"])
+    timelock = _deploy(w3, *artifacts["Timelock"])
+    start = w3.eth.block_number + 1
+    cfg = Config(
+        rpc_url="unused", chain_name="anvil", confirmations=0, start_block=start,
+        state_file=str(tmp_path / "cursor.json"),
+        contracts=[Contract(timelock.address, "TL")],
+        treasuries=[Treasury(deployer, "Treasury", [], [Collection(nft.address, "Apes"), Collection(multi.address, "Multi")],
+                             min_native_drop=1.0)],
+        alerts=Alerts(),
+    )
+    got: list = []
+    watcher = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    assert watcher.poll_once() == 0          # records baseline balance, nothing to report yet
+
+    nft.functions.transferFrom(deployer, other, 7).transact({"from": deployer})
+    nft.functions.transferFrom(other, deployer, 8).transact({"from": deployer})          # inbound: ignored
+    multi.functions.single(deployer, other, 1, 3).transact({"from": deployer})
+    multi.functions.batch(deployer, other, [1, 2], [1, 1]).transact({"from": deployer})
+    timelock.functions.schedule(other, bytes.fromhex("f2fde38b") + b"\x00" * 32).transact({"from": deployer})
+    w3.eth.wait_for_transaction_receipt(w3.eth.send_transaction({"from": deployer, "to": other, "value": 2 * 10**18}))
+
+    assert watcher.poll_once() == 5
+    events = sorted((a.event, a.source) for a in got)
+    assert events == sorted([("Transfer", "ERC-721"), ("TransferSingle", "ERC-1155"), ("TransferBatch", "ERC-1155"),
+                             ("CallScheduled", "TimelockController"), ("BalanceDrop", "native")])
+    by = {a.event: a for a in got}
+    assert "NFT #7 of Apes" in by["Transfer"].message
+    assert "batch of 2 token ids of Multi" in by["TransferBatch"].message
+    assert "calling transferOwnership(address) [0xf2fde38b]" in by["CallScheduled"].message
+    assert "native balance fell 2.0" in by["BalanceDrop"].message
+    assert watcher.poll_once() == 0

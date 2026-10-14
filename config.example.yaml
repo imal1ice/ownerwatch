@@ -27,6 +27,10 @@ treasuries:
         symbol: "USDC"
         decimals: 6
         min_amount: 100000        # alert if >= 100k USDC leaves in one transfer
+    nfts:                         # optional: alert on ANY NFT leaving (ERC-721 and ERC-1155)
+      - address: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D"
+        label: "BAYC"
+    min_native_drop: 50           # optional: alert if the ETH balance falls by >= 50 ETH between polls
 
 # Where alerts go. Any combination; stdout is always on.
 alerts:
