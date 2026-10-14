@@ -1,5 +1,7 @@
 # ownerwatch
 
+[![ci](https://github.com/imal1ice/ownerwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/imal1ice/ownerwatch/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/imal1ice/ownerwatch)](https://github.com/imal1ice/ownerwatch/releases) ![license](https://img.shields.io/github/license/imal1ice/ownerwatch)
+
 Self-hosted monitor that alerts you the moment the **admin surface** of your EVM contracts changes.
 
 Most protocol losses in 2025-2026 started with a key, a role or a proxy changing hands, not with a clever exploit. ownerwatch watches the events that mean "someone just gained control" and pushes them to Discord, Slack, Telegram or any webhook within seconds. No account, no SaaS, no third party holding your contract list. One YAML file and a Docker container.
@@ -18,7 +20,7 @@ Every address in your config gets the full catalog:
 | Legacy Timelock (Compound, Uniswap and forks) | NewAdmin, NewPendingAdmin, NewDelay, QueueTransaction, ExecuteTransaction, CancelTransaction | medium to critical |
 | Governor (OpenZeppelin and GovernorBravo) | ProposalCreated, ProposalQueued, ProposalExecuted, ProposalCanceled, VotingDelaySet, VotingPeriodSet, ProposalThresholdSet, QuorumNumeratorUpdated, TimelockChange, NewImplementation | medium to critical |
 | Aragon OS (Lido and others) | SetApp, SetPermission, ChangePermissionManager, StartVote, ExecuteVote | medium to critical |
-| Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler | critical / high |
+| Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler, ExecutionFromModuleSuccess, ExecutionSuccess, ExecutionFailure | info to critical |
 | ERC-20 treasuries | Transfer out above a threshold you set | high |
 | NFT treasuries | Any ERC-721 or ERC-1155 transfer out | high |
 | Native balance | ETH balance of a treasury falls by more than a threshold between polls | high |

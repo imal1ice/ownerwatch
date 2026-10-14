@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Safe execution events, including module executions that bypass the signer queue
 - Governor ProposalCreated alerts list each action's target and decoded call
 
 ## 0.6.0

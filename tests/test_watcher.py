@@ -48,7 +48,7 @@ def anvil():
 def artifacts():
     subprocess.run(["forge", "build", "--root", str(FIXTURES)], check=True, capture_output=True)
     out = {}
-    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto"):
+    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto", "SafeLike"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out
@@ -204,3 +204,19 @@ def test_protocol_events(anvil, artifacts, tmp_path):
     assert by["SetCurator"].source == "MetaMorpho"
     assert "cap set for market 0x" in by["SetCap"].message and ": 5 by" in by["SetCap"].message
     assert by["Stopped"].source == "Lido"
+
+
+def test_safe_execution_events(anvil, artifacts, tmp_path):
+    w3 = anvil
+    deployer = w3.eth.accounts[0]
+    sl = _deploy(w3, *artifacts["SafeLike"])
+    cfg = Config(rpc_url="unused", chain_name="anvil", confirmations=0, start_block=w3.eth.block_number + 1,
+                 state_file=str(tmp_path / "c.json"), contracts=[Contract(sl.address, "Safe")], alerts=Alerts())
+    got: list = []
+    w = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    sl.functions.viaModule().transact({"from": deployer})
+    w3.eth.wait_for_transaction_receipt(sl.functions.exec().transact({"from": deployer}))
+    assert w.poll_once() == 2
+    by = {a.event: a for a in got}
+    assert by["ExecutionFromModuleSuccess"].severity == "high" and deployer in by["ExecutionFromModuleSuccess"].message
+    assert by["ExecutionSuccess"].severity == "info"

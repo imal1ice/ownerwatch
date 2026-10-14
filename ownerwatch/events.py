@@ -277,6 +277,22 @@ CATALOG: list[EventSpec] = [
         _abi("ChangedGuard", _inp("guard", "address", False)),
         "critical", "Safe guard changed to {guard}", "Safe"),
     EventSpec(
+        "ExecutionFromModuleSuccess", "ExecutionFromModuleSuccess(address)",
+        _abi("ExecutionFromModuleSuccess", _inp("module", "address", True)),
+        "high", "Safe executed a transaction via module {module}, bypassing the signer queue", "Safe"),
+    EventSpec(
+        "ExecutionFromModuleFailure", "ExecutionFromModuleFailure(address)",
+        _abi("ExecutionFromModuleFailure", _inp("module", "address", True)),
+        "medium", "Safe module {module} attempted a transaction that failed", "Safe"),
+    EventSpec(
+        "ExecutionSuccess", "ExecutionSuccess(bytes32,uint256)",
+        _abi("ExecutionSuccess", _inp("txHash", "bytes32", False), _inp("payment", "uint256", False)),
+        "info", "Safe transaction executed {txHash}", "Safe"),
+    EventSpec(
+        "ExecutionFailure", "ExecutionFailure(bytes32,uint256)",
+        _abi("ExecutionFailure", _inp("txHash", "bytes32", False), _inp("payment", "uint256", False)),
+        "medium", "Safe transaction reverted on execution {txHash}", "Safe"),
+    EventSpec(
         "ChangedFallbackHandler", "ChangedFallbackHandler(address)",
         _abi("ChangedFallbackHandler", _inp("handler", "address", False)),
         "high", "Safe fallback handler changed to {handler}", "Safe"),

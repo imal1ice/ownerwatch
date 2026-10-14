@@ -73,6 +73,13 @@ contract Proto {
     function poke(address a) external { emit PoolUpdated(address(0), a); emit SetCurator(a); emit SetCap(msg.sender, bytes32(uint256(9)), 5); emit Stopped(); }
 }
 
+contract SafeLike {
+    event ExecutionFromModuleSuccess(address indexed module);
+    event ExecutionSuccess(bytes32 txHash, uint256 payment);
+    function viaModule() external { emit ExecutionFromModuleSuccess(msg.sender); }
+    function exec() external { emit ExecutionSuccess(bytes32(uint256(7)), 0); }
+}
+
 contract Token {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function transfer(address to, uint256 v) external { emit Transfer(msg.sender, to, v); }
