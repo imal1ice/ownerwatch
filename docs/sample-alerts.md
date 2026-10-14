@@ -74,3 +74,17 @@ block 22024608 tx https://etherscan.io/tx/0xb0aa5c0d57448dfd8ed60ed87af671fba164
 --
 Governor.ProposalCreated: proposal 82 created by 0x683a4F9915D6216f73d6Df50151725036bD26C02 with 6 targets: # Unichain and Uniswap v4 Liquidity Incentives | actions: 0x7c8406384f7a5c147a6ADd16407803BE146147E4: acceptOwnership(); 0x77A3460801FA71aC747e34C1C5582ee472B906b9: acceptOwnership(); 0xEC645C3750021Db8b155EF12094bb0395e8c107c: acceptOwnership(); 0x7c8406384f7a5c147a6ADd16407803BE146147E4: resume(); 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984: approve(0x7c8406384f7a5c147a6add16407803be146147e4, 7588532000000000000000000); ... 1 more
 ```
+
+## Safe queue, GnosisDAO treasury Safe, live on 2026-10-14
+
+Captured from a live run. The second alert fired while the transaction sat fully signed in the queue, before anyone executed it.
+
+```
+Safe.SafeTxProposed: new queued transaction: nonce 2863 to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 value 0.0000 calling transfer(dst=0x458cD345B4C05e8DF39d0A07220feb4Ec19F5e6f, wad=17655865327845766647) [0xa9059cbb, verified]; 1/3 signatures; proposed by 0x4e288c2aBC77a4D7c5583cdC9792731220a088cF
+block 0 tx 0xff0a42dfb0126147639a8dd3fa542438e977d163b7db9d18fbcb90b9b577cf8d
+[HIGH] GnosisDAO Treasury Safe (0x849D52316331967b6fF1198e5E32A0eB168D039d) on ethereum
+
+[HIGH] GnosisDAO Treasury Safe (0x849D52316331967b6fF1198e5E32A0eB168D039d) on ethereum
+Safe.SafeTxProposed: new queued transaction: nonce 2737 to 0x849D52316331967b6fF1198e5E32A0eB168D039d value 0.0000 calling swapOwner(prevOwner=…, oldOwner=…, newOwner=…) [0xe318b52b, verified via implementation]; 3/3 signatures; proposed by 0x48A9d0953c8959AEb19bA55f5C04B0A54c84823C
+block 0 tx 0x73bea1f93574f197f65aa5fc3cf0824123a2a74190639314ff7e6410769a67dd
+```
