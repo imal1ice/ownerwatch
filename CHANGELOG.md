@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.2
 - `probe --roles-from-logs` works on free RPCs: the scan starts at the contract's creation block (Sourcify, else a code binary search), uses a public full-history log gateway per chain (Ethereum, Optimism, Arbitrum, Gnosis, Polygon; Base is range-limited) or `--logs-rpc`, splits ranges adaptively and remembers the working chunk size, and names roles from the verified ABI's bytes32 getters
 
 ## 0.7.1
