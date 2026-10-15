@@ -15,6 +15,16 @@ ADMIN_SLOT = int("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d
 BEACON_SLOT = int("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50", 16)
 ZERO = "0x" + "00" * 20
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"   # same address on every major EVM chain
+# Free public RPCs that serve full log history (verified 2026-10-15); used for
+# role replay when no --logs-rpc is given. Ranges are still split adaptively.
+PUBLIC_LOG_RPCS = {
+    1: "https://mainnet.gateway.tenderly.co",
+    10: "https://optimism.gateway.tenderly.co",
+    100: "https://gnosis.gateway.tenderly.co",
+    137: "https://polygon.gateway.tenderly.co",
+    8453: "https://base.gateway.tenderly.co",
+    42161: "https://arbitrum.gateway.tenderly.co",
+}
 MULTICALL3_ABI = [{"type": "function", "name": "aggregate3", "stateMutability": "payable",
                    "inputs": [{"name": "calls", "type": "tuple[]", "components": [
                        {"name": "target", "type": "address"}, {"name": "allowFailure", "type": "bool"}, {"name": "callData", "type": "bytes"}]}],
@@ -152,24 +162,115 @@ class Prober:
                 elif c and c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
 
-    def _get_logs_split(self, params: dict, from_block: int, to_block: int) -> list:
+    def role_names(self, addr: str) -> dict[str, str]:
+        """Map role hashes to names by calling every zero-argument bytes32 getter
+        in the contract's verified ABI (or its implementation's): MINTER_ROLE(), etc."""
+        from .decode import implementation_of, verified_abi
+        addr = Web3.to_checksum_address(addr)
         try:
-            return self.w3.eth.get_logs({**params, "fromBlock": from_block, "toBlock": to_block})
+            chain_id = self.w3.eth.chain_id
+            abi = verified_abi(chain_id, addr)
+            if not abi:
+                impl = implementation_of(self.w3, addr)
+                abi = verified_abi(chain_id, impl) if impl else None
         except Exception:  # noqa: BLE001
-            if to_block - from_block < 200:
-                raise
-            mid = (from_block + to_block) // 2
-            return self._get_logs_split(params, from_block, mid) + self._get_logs_split(params, mid + 1, to_block)
+            abi = None
+        getters = [f["name"] for f in abi or [] if f.get("type") == "function" and not f.get("inputs")
+                   and len(f.get("outputs") or []) == 1 and f["outputs"][0]["type"] == "bytes32"
+                   and f.get("stateMutability") in ("view", "pure")]
+        if not getters:
+            return {}
+        results = self._batch_calls([(addr, _sel(f"{g}()")) for g in getters])
+        return {"0x" + r.hex(): g for g, r in zip(getters, results) if r and len(r) == 32}
 
-    def role_history(self, addr: str, from_block: int = 0) -> dict[str, list[str]]:
+    def creation_block(self, addr: str) -> int:
+        """Block the contract was deployed in: from Sourcify's verified deployment
+        record, else a binary search over eth_getCode (archive RPC), else 0."""
+        addr = Web3.to_checksum_address(addr)
+        try:
+            import requests
+            r = requests.get(f"https://sourcify.dev/server/v2/contract/{self.w3.eth.chain_id}/{addr}",
+                             params={"fields": "deployment"}, timeout=8)
+            if r.ok:
+                b = (r.json().get("deployment") or {}).get("blockNumber")
+                if b:
+                    return int(b)
+        except Exception:  # noqa: BLE001
+            pass
+        lo, hi = 0, self.w3.eth.block_number
+        try:
+            if not self.w3.eth.get_code(addr, hi):
+                return 0
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if self.w3.eth.get_code(addr, mid):
+                    hi = mid
+                else:
+                    lo = mid + 1
+            return lo
+        except Exception:  # noqa: BLE001
+            return 0          # non-archive RPC: scan from genesis
+
+    def _get_logs_split(self, params: dict, from_block: int, to_block: int, w3: Web3 | None = None,
+                        budget: int = 2000, log=None) -> list:
+        """Adaptive chunked eth_getLogs for free RPCs: start with the whole range,
+        halve the chunk on a range error and remember the ceiling, grow back after
+        successes, wait out rate limits. budget caps the request count."""
+        w3 = w3 or self.w3
+        out: list = []
+        start, chunk, ceiling, requests_made = from_block, to_block - from_block + 1, None, 0
+        while start <= to_block:
+            end = min(start + chunk - 1, to_block)
+            requests_made += 1
+            if requests_made > budget:
+                raise RuntimeError(f"eth_getLogs budget of {budget} requests exhausted at block {start}")
+            try:
+                out += w3.eth.get_logs({**params, "fromBlock": start, "toBlock": end})
+            except Exception as e:  # noqa: BLE001
+                msg = str(e).lower()
+                if "429" in msg or "rate limit" in msg or "too many requests" in msg:
+                    import time
+                    time.sleep(2)
+                    continue
+                if chunk <= 50 or not any(k in msg for k in ("range", "limit", "exceed", "large", "span", "many", "more than", "results")):
+                    raise          # pruned history, auth, method missing: smaller chunks will not help
+                ceiling = chunk // 2
+                chunk = ceiling
+                continue
+            start = end + 1
+            if ceiling is None or chunk * 2 <= ceiling:
+                chunk *= 2
+            if log:
+                log(f"  logs {start - from_block}/{to_block - from_block + 1} blocks, chunk {chunk}")
+        return out
+
+    def role_history(self, addr: str, from_block: int | None = None, logs_w3: Web3 | None = None,
+                     log=None) -> dict[str, list[str]]:
         """Replay RoleGranted/RoleRevoked logs to list current holders per role.
-        Needs an RPC that serves historical logs; wide ranges are split on error."""
+        Scans from the creation block (Sourcify or code binary search) unless
+        from_block is given; logs_w3 can be a different RPC that serves wide log
+        ranges (e.g. rpc.flashbots.net, 100k blocks per call) while self.w3 does the reads."""
         addr = Web3.to_checksum_address(addr)
         granted = _norm(topic0("RoleGranted(bytes32,address,address)"))
         revoked = _norm(topic0("RoleRevoked(bytes32,address,address)"))
-        logs = self._get_logs_split({"address": addr, "topics": [[granted, revoked]]}, from_block, self.w3.eth.block_number)
+        if from_block is None:
+            from_block = self.creation_block(addr)
+            if log:
+                log(f"  {addr}: scanning role logs from block {from_block}")
+        params = {"address": addr, "topics": [[granted, revoked]]}
+        if logs_w3 is None and self.w3.eth.chain_id in PUBLIC_LOG_RPCS:
+            try:
+                public = Web3(Web3.HTTPProvider(PUBLIC_LOG_RPCS[self.w3.eth.chain_id], request_kwargs={"timeout": 60}))
+                logs = self._get_logs_split(params, from_block, public.eth.block_number, w3=public, log=log)
+            except Exception as e:  # noqa: BLE001
+                if log:
+                    log(f"  public log gateway failed ({e}); falling back to --rpc")
+                logs = self._get_logs_split(params, from_block, self.w3.eth.block_number, log=log)
+        else:
+            logs = self._get_logs_split(params, from_block, (logs_w3 or self.w3).eth.block_number, w3=logs_w3, log=log)
         logs.sort(key=lambda l: (l["blockNumber"], l["logIndex"]))
         names = {("0x" + bytes(v).hex()): k for k, v in ROLES.items()}
+        names.update(self.role_names(addr))
         holders: dict[str, set[str]] = {}
         for lg in logs:
             t0 = "0x" + bytes(lg["topics"][0]).hex()
@@ -186,7 +287,12 @@ class Prober:
             for k, v in out.items():
                 n.roles[k] = v
             for who in out.get("DEFAULT_ADMIN_ROLE", []):
-                c = self.probe(who, depth=2)
+                try:
+                    c = self.probe(who, depth=2)
+                except Exception as e:  # noqa: BLE001
+                    if log:
+                        log(f"  could not classify {who}: {e}")
+                    continue
                 if c.kind == "eoa":
                     n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
                 elif c.kind == "safe" and c.safe_threshold == 1:

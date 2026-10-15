@@ -45,7 +45,10 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--json", action="store_true", help="print the probed nodes as JSON")
     pr.add_argument("--roles-from-logs", action="store_true",
                     help="replay RoleGranted/RoleRevoked logs to list every current role holder (needs an RPC with log history)")
-    pr.add_argument("--from-block", type=int, default=0, help="with --roles-from-logs: contract creation block, to limit the scan")
+    pr.add_argument("--from-block", type=int, default=None,
+                    help="with --roles-from-logs: first block to scan (default: creation block from Sourcify or a code search)")
+    pr.add_argument("--logs-rpc", default=None,
+                    help="with --roles-from-logs: RPC used only for eth_getLogs, e.g. https://rpc.flashbots.net (100k blocks per call)")
     a = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
@@ -86,9 +89,10 @@ def main(argv: list[str] | None = None) -> int:
         roots = [prober.probe(x) for x in a.addresses]
         prober.check_roles(list(prober.seen.keys()))
         if a.roles_from_logs:
+            logs_w3 = Web3(Web3.HTTPProvider(a.logs_rpc, request_kwargs={"timeout": 60})) if a.logs_rpc else None
             for x in a.addresses:
                 try:
-                    prober.role_history(x, a.from_block)
+                    prober.role_history(x, a.from_block, logs_w3, log=lambda m: print(m, file=sys.stderr))
                 except Exception as e:  # noqa: BLE001
                     print(f"# role history for {x} failed: {e}", file=sys.stderr)
         if a.markdown:

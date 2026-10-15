@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- `probe --roles-from-logs` works on free RPCs: the scan starts at the contract's creation block (Sourcify, else a code binary search), uses a public full-history log gateway per chain (Ethereum, Optimism, Arbitrum, Gnosis, Polygon; Base is range-limited) or `--logs-rpc`, splits ranges adaptively and remembers the working chunk size, and names roles from the verified ABI's bytes32 getters
+
 ## 0.7.1
 - Decoded arguments format structs and bytes readably and clip long lists; calls on proxies decode via the implementation's verified ABI (Safe singletons included); Safe service timeouts are retried
 - Fix: a Safe added to an existing config had its whole pending backlog alerted as new; seeding is now per Safe

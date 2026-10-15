@@ -92,3 +92,53 @@ def test_implementation_of_reads_erc1967_and_slot0(anvil, artifacts):  # noqa: F
     slot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
     w3.provider.make_request("anvil_setStorageAt", [token.address, slot, "0x" + "00" * 12 + admin.address[2:]])
     assert implementation_of(w3, token.address) == admin.address
+
+
+class _FakeEth:
+    """eth_getLogs stub: rejects ranges wider than `limit` with a range error,
+    optionally fails a whole region with a non-range error; counts calls."""
+
+    def __init__(self, limit, logs_at=(), pruned_below=None):
+        self.limit, self.logs_at, self.pruned_below, self.calls = limit, set(logs_at), pruned_below, []
+
+    def get_logs(self, params):
+        a, b = params["fromBlock"], params["toBlock"]
+        self.calls.append((a, b))
+        if self.pruned_below is not None and a < self.pruned_below:
+            raise ValueError("pruned history unavailable")
+        if b - a + 1 > self.limit:
+            raise ValueError("query exceeds max block range")
+        return [{"blockNumber": n} for n in sorted(self.logs_at) if a <= n <= b]
+
+
+class _FakeW3:
+    def __init__(self, eth):
+        self.eth = eth
+
+
+def test_get_logs_split_adapts_chunk_and_remembers_ceiling():
+    eth = _FakeEth(limit=1000, logs_at=[5, 2500, 9999])
+    p = Prober.__new__(Prober)
+    out = p._get_logs_split({"address": "0x0"}, 0, 9999, w3=_FakeW3(eth))
+    assert [l["blockNumber"] for l in out] == [5, 2500, 9999]
+    widths = [b - a + 1 for a, b in eth.calls]
+    assert max(w for w in widths if w <= 1000) <= 1000
+    # after finding the ceiling no chunk wider than it is tried again
+    first_ok = next(i for i, w in enumerate(widths) if w <= 1000)
+    assert all(w <= 1000 for w in widths[first_ok:])
+    assert len(eth.calls) < 40
+
+
+def test_get_logs_split_raises_on_non_range_error():
+    eth = _FakeEth(limit=10**9, pruned_below=100)
+    p = Prober.__new__(Prober)
+    with pytest.raises(ValueError, match="pruned"):
+        p._get_logs_split({"address": "0x0"}, 0, 10_000, w3=_FakeW3(eth))
+    assert len(eth.calls) == 1      # no pointless halving
+
+
+def test_get_logs_split_budget():
+    eth = _FakeEth(limit=64)
+    p = Prober.__new__(Prober)
+    with pytest.raises(RuntimeError, match="budget"):
+        p._get_logs_split({"address": "0x0"}, 0, 10_000, w3=_FakeW3(eth), budget=20)
