@@ -293,10 +293,13 @@ class Prober:
                     if log:
                         log(f"  could not classify {who}: {e}")
                     continue
+                note = None
                 if c.kind == "eoa":
-                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
+                    note = f"DEFAULT_ADMIN_ROLE held by EOA {who}"
                 elif c.kind == "safe" and c.safe_threshold == 1:
-                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
+                    note = f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}"
+                if note and note not in n.notes:
+                    n.notes.append(note)
         return out
 
     def _slot_addr(self, addr: str, slot: int) -> str | None:
