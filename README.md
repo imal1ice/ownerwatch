@@ -121,3 +121,12 @@ Need it deployed, extended or integrated with your alerting stack? Open an issue
 python3 -m venv .venv && .venv/bin/pip install -e . pytest
 .venv/bin/pytest        # end-to-end test against a local anvil node; needs foundry
 ```
+
+## Services
+
+ownerwatch is free and self-hosted. If you would rather have someone do the work:
+
+- **Admin-surface review**: every owner, proxy admin, role holder and Safe signer in your deployment, replayed from logs, with a written report and a ready-to-run ownerwatch config. Flat $400 in USDC, delivered within 48 hours.
+- **Hosted monitoring**: I run ownerwatch for you and alert your Discord, Slack or Telegram. $200 per month per chain, paid in USDC on-chain.
+
+Contact: imal1ice@proton.me. Wallet for payments: `0x874D018623EeBb398B898AC7AB0c97506244141B`.
