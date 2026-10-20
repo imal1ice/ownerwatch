@@ -3,7 +3,9 @@
 # when the admin surface differs from the committed report, so a changed signer,
 # delay or proxy admin shows up as a red check instead of going unnoticed.
 #
-# First run: commit the generated admin-surface.md to seed the baseline.
+# First run: it fails with "no baseline yet" and prints the report; commit
+# admin-surface.new.md as admin-surface.md to seed the baseline.
+# Action source and inputs: https://github.com/imal1ice/ownerwatch-action
 name: admin-surface
 on:
   schedule:
@@ -14,26 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: imal1ice/ownerwatch-action@v1
+        id: check
         with:
-          python-version: "3.12"
-      - run: pip install git+https://github.com/imal1ice/ownerwatch
-      - name: Probe
-        env:
-          RPC_URL: ${{ secrets.RPC_URL }}   # any RPC that allows eth_call; the public ones in the config also work
-        run: |
-          ownerwatch probe --config ownerwatch.yaml --markdown --label "${{ github.repository }}" > admin-surface.new.md
-      - name: Compare with committed baseline
-        run: |
-          if [ ! -f admin-surface.md ]; then
-            echo "No baseline yet. Commit admin-surface.new.md as admin-surface.md to seed it."; cat admin-surface.new.md; exit 1
-          fi
-          # ignore the generated-on footer and block-dependent lines
-          if ! diff <(grep -v '^_Generated' admin-surface.md) <(grep -v '^_Generated' admin-surface.new.md); then
-            echo "::error::Admin surface changed since the last committed report. Review the diff above."; exit 1
-          fi
+          config: ownerwatch.yaml        # set probe_rpc_url per chain, or pass rpc: ${{ secrets.RPC_URL }}
+          baseline: admin-surface.md
+          label: ${{ github.repository }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: admin-surface
-          path: admin-surface.new.md
+          path: ${{ steps.check.outputs.report }}

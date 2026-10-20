@@ -59,7 +59,7 @@ ownerwatch probe --config config.yaml --markdown --label Acme > admin-surface.md
 
 `--roles-from-logs` finds the creation block on Sourcify and reads the history from a free public log gateway on Ethereum, Optimism, Arbitrum, Gnosis and Polygon; on Base (and for any chain without one) pass `--logs-rpc` with an RPC that serves wide `eth_getLogs` ranges, or `--from-block` to bound the scan.
 
-Want that check in CI? `examples/github-action-drift.yml` re-probes weekly and fails when a signer, delay or proxy admin changes from the committed report.
+Want that check in CI? Add one step: `uses: imal1ice/ownerwatch-action@v1` ([ownerwatch-action](https://github.com/imal1ice/ownerwatch-action)) re-probes weekly and fails when a signer, delay or proxy admin changes from the committed report. `examples/github-action-drift.yml` is the full workflow.
 
 ```bash
 ```
