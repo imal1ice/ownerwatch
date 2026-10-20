@@ -1,4 +1,5 @@
 rpc_url: "https://rpc.flashbots.net"   # accepts 10k-block eth_getLogs ranges; most public RPCs do not
+probe_rpc_url: "https://eth.drpc.org"   # for `ownerwatch probe --config`; needs eth_call
 chain_name: ethereum
 confirmations: 3
 max_block_range: 10000

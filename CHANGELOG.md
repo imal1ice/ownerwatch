@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `probe --config` honours `--rpc` (single-chain configs) and a new per-chain `probe_rpc_url`, and exits cleanly when the RPC rejects eth_call; examples carry `probe_rpc_url` so the drift check works out of the box
 - probe: role replay no longer duplicates the "DEFAULT_ADMIN_ROLE held by EOA" finding
 
 ## 0.7.2

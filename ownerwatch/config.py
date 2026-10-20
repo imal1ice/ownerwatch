@@ -59,6 +59,7 @@ class Alerts:
 class Config:
     rpc_url: str
     chain_name: str = "ethereum"
+    probe_rpc_url: str = ""         # RPC for `probe` (needs eth_call); defaults to rpc_url
     explorer_url: str = ""          # e.g. https://etherscan.io; alerts then carry a clickable tx link
     poll_interval_seconds: int = 15
     confirmations: int = 2
@@ -124,6 +125,7 @@ def _build(raw: dict) -> Config:
     cfg = Config(
         rpc_url=raw["rpc_url"],
         chain_name=raw.get("chain_name", "ethereum"),
+        probe_rpc_url=str(raw.get("probe_rpc_url", "") or ""),
         explorer_url=str(raw.get("explorer_url", "") or ""),
         poll_interval_seconds=int(raw.get("poll_interval_seconds", 15)),
         confirmations=int(raw.get("confirmations", 2)),

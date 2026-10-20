@@ -54,7 +54,7 @@ Several chains in one process: put shared settings at the top level and a `chain
 ```bash
 ownerwatch probe --rpc https://eth.drpc.org --safe-chain eth --label Acme 0xYourProxy 0xYourSafe
 ownerwatch probe --rpc https://eth.drpc.org --roles-from-logs 0xAccessControlContract   # every current role holder, replayed from logs since deployment
-ownerwatch probe --config config.yaml --markdown --label Acme > admin-surface.md   # monthly report of everything you watch
+ownerwatch probe --config config.yaml --markdown --label Acme > admin-surface.md   # monthly report of everything you watch; set probe_rpc_url per chain if rpc_url rejects eth_call
 ```
 
 `--roles-from-logs` finds the creation block on Sourcify and reads the history from a free public log gateway on Ethereum, Optimism, Arbitrum, Gnosis and Polygon; on Base (and for any chain without one) pass `--logs-rpc` with an RPC that serves wide `eth_getLogs` ranges, or `--from-block` to bound the scan.

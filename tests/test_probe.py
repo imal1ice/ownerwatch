@@ -70,6 +70,13 @@ def test_probe_from_config(anvil, artifacts, tmp_path, capsys):  # noqa: F811
     assert main(["probe", "--config", str(cfg), "--markdown", "--label", "Acme"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("# Acme admin surface on anvil") and "controlled by an EOA" in out
+    # --rpc overrides a broken rpc_url for a single-chain config; probe_rpc_url does the same
+    cfg.write_text(f"rpc_url: http://127.0.0.1:1\nchain_name: anvil\ncontracts:\n  - address: '{admin.address}'\n")
+    assert main(["probe", "--config", str(cfg), "--rpc", w3.provider.endpoint_uri, "--markdown"]) == 0
+    cfg.write_text(f"rpc_url: http://127.0.0.1:1\nprobe_rpc_url: {w3.provider.endpoint_uri}\nchain_name: anvil\ncontracts:\n  - address: '{admin.address}'\n")
+    assert main(["probe", "--config", str(cfg), "--markdown"]) == 0
+    cfg.write_text(f"rpc_url: http://127.0.0.1:1\nchain_name: anvil\ncontracts:\n  - address: '{admin.address}'\n")
+    assert main(["probe", "--config", str(cfg), "--markdown"]) == 2
 
 
 def test_probe_json(anvil, artifacts, tmp_path, capsys):  # noqa: F811

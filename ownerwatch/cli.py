@@ -68,11 +68,21 @@ def main(argv: list[str] | None = None) -> int:
         from .probe import Prober, describe, markdown_report, suggest_config
         if a.config:
             # one report per chain, addresses taken from the config
-            for cfg in load_all(a.config):
-                prober = Prober(Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 30})))
+            cfgs_ = load_all(a.config)
+            for cfg in cfgs_:
+                # --rpc overrides a single-chain config; multi-chain configs use probe_rpc_url per chain
+                rpc = a.rpc if (a.rpc and len(cfgs_) == 1) else (cfg.probe_rpc_url or cfg.rpc_url)
+                prober = Prober(Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 30})))
                 addrs = [c.address for c in cfg.contracts] + [s_.address for s_ in cfg.safes]
-                roots = [prober.probe(x) for x in dict.fromkeys(addrs)]
-                prober.check_roles(list(prober.seen.keys()))
+                try:
+                    roots = [prober.probe(x) for x in dict.fromkeys(addrs)]
+                    prober.check_roles(list(prober.seen.keys()))
+                except Exception as e:  # noqa: BLE001  (RPC refused/unreachable; a clean exit beats a traceback in CI)
+                    import requests
+                    if not isinstance(e, (RuntimeError, requests.RequestException)):
+                        raise
+                    print(f"error: {e}\nhint: set probe_rpc_url in the config or pass --rpc", file=sys.stderr)
+                    return 2
                 if a.markdown:
                     print(markdown_report(prober, a.label, cfg.chain_name, roots))
                 elif a.json:
