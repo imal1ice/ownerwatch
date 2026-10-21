@@ -101,3 +101,39 @@ contract Token {
     event Transfer(address indexed from, address indexed to, uint256 value);
     function transfer(address to, uint256 v) external { emit Transfer(msg.sender, to, v); }
 }
+
+/// Solady Timelock shape: minDelay(), no admin(), no owner().
+contract SoladyTimelockLike {
+    function minDelay() external pure returns (uint256) { return 86400; }
+}
+
+/// Custom Ownable timelock shape (Noon): delay() + owner(), no admin().
+contract OwnedTimelockLike {
+    address public owner = msg.sender;
+    function delay() external pure returns (uint256) { return 172800; }
+}
+
+/// Factory-deployed ERC-1967 proxy (Solady ERC1967Factory shape): implementation slot set,
+/// admin slot empty, the factory address embedded as an immutable, admin stored in the factory.
+contract FactoryProxy {
+    address public immutable factory;
+    constructor(address impl) {
+        factory = msg.sender;
+        assembly { sstore(0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc, impl) }
+    }
+    function owner() external pure returns (address) { return address(0xBEEF); }
+    function upgrade(address impl) external {
+        require(msg.sender == factory, "only factory");
+        assembly { sstore(0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc, impl) }
+    }
+}
+
+contract ProxyFactoryLike {
+    mapping(address => address) public adminOf;
+    address public lastProxy;
+    function deploy(address impl, address admin) external returns (address p) {
+        p = address(new FactoryProxy(impl));
+        adminOf[p] = admin;
+        lastProxy = p;
+    }
+}

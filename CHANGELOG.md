@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+
+## 0.7.6 - 2026-10-21
+- probe: proxies whose upgrade admin is stored in their factory (Solady `ERC1967Factory` and forks, empty ERC-1967 admin slot) now resolve to the real admin via `adminOf(proxy)`, found from addresses embedded in the proxy bytecode plus Solady's canonical factory. Before, such proxies were reported as controlled by `owner()`, which overstated upgrade risk.
+- probe: recognises Solady `Timelock` (`minDelay()`) and custom Ownable timelocks (`delay()` + `owner()`).
+- probe: every finding names the link it concerns (upgrade admin, `owner()`, `admin()`); an `owner()` without a timelock is reported as owner-level settings, separate from the upgrade path.
 - Examples and help text use the Tenderly public gateway for logs instead of rpc.flashbots.net, which was found to return incomplete logs silently
 
 ## 0.7.5 - 2026-10-21

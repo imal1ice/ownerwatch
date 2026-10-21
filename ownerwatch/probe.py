@@ -32,8 +32,33 @@ MULTICALL3_ABI = [{"type": "function", "name": "aggregate3", "stateMutability": 
                        {"name": "success", "type": "bool"}, {"name": "returnData", "type": "bytes"}]}]}]
 
 
+SOLADY_ERC1967_FACTORY = "0x0000000000006396FF2a80c067f99B3d2Ab4Df24"   # canonical, same address on every chain
+
+
 def _sel(sig: str) -> bytes:
     return Web3.keccak(text=sig)[:4]
+
+
+def _embedded_addresses(code: bytes, limit: int = 8) -> list[str]:
+    """Addresses pushed as constants in runtime bytecode: PUSH20, or PUSH32 with 12 leading
+    zero bytes (Solidity immutables). Factory-deployed proxies (Solady ERC1967Factory and
+    forks) embed the factory this way, and the factory, not the proxy, stores the admin."""
+    out: list[str] = []
+    i = 0
+    while i < len(code) and len(out) < limit:
+        op = code[i]
+        if 0x60 <= op <= 0x7F:
+            n = op - 0x5F
+            data = code[i + 1:i + 1 + n]
+            raw = data if n == 20 else (data[12:] if n == 32 and data[:12] == b"\x00" * 12 else None)
+            if raw is not None and len(raw) == 20 and raw != b"\x00" * 20 and raw != b"\xff" * 20:
+                a = Web3.to_checksum_address("0x" + raw.hex())
+                if a not in out:
+                    out.append(a)
+            i += 1 + n
+        else:
+            i += 1
+    return out
 
 
 ROLES = {
@@ -54,6 +79,7 @@ class Node:
     code_size: int = 0
     implementation: str | None = None
     proxy_admin: str | None = None
+    admin_factory: str | None = None    # set when the upgrade admin is stored in a proxy factory (adminOf)
     beacon: str | None = None
     owner: str | None = None
     pending_owner: str | None = None
@@ -307,6 +333,28 @@ class Prober:
         a = Web3.to_checksum_address("0x" + bytes(v)[-20:].hex())
         return None if a == ZERO else a
 
+    def _factory_admin(self, proxy: str, code: bytes) -> tuple[str | None, str | None]:
+        """For a proxy with an implementation but an empty ERC-1967 admin slot, ask every factory
+        embedded in its bytecode (and Solady's canonical factory) for adminOf(proxy)."""
+        cands = _embedded_addresses(code)
+        if SOLADY_ERC1967_FACTORY not in cands:
+            cands.append(SOLADY_ERC1967_FACTORY)
+        data = _sel("adminOf(address)") + bytes(12) + bytes.fromhex(proxy[2:])
+        for f in cands:
+            if f == proxy:
+                continue
+            try:
+                if len(self.w3.eth.get_code(f)) == 0:
+                    continue
+                r = bytes(self.w3.eth.call({"to": f, "data": data}))
+            except Exception:  # noqa: BLE001
+                continue
+            if len(r) == 32 and r[:12] == bytes(12):
+                a = Web3.to_checksum_address("0x" + r[12:].hex())
+                if a != ZERO:
+                    return a, f
+        return None, None
+
     # ---- probe ----
     def probe(self, address: str, depth: int = 0) -> Node:
         address = Web3.to_checksum_address(address)
@@ -314,13 +362,16 @@ class Prober:
             return self.seen[address]
         n = Node(address=address)
         self.seen[address] = n
-        n.code_size = len(self.w3.eth.get_code(address))
+        code = bytes(self.w3.eth.get_code(address))
+        n.code_size = len(code)
         if n.code_size == 0:
             n.kind = "eoa"
             return n
         n.implementation = self._slot_addr(address, IMPL_SLOT)
         n.proxy_admin = self._slot_addr(address, ADMIN_SLOT)
         n.beacon = self._slot_addr(address, BEACON_SLOT)
+        if n.implementation and not n.proxy_admin and not n.beacon:
+            n.proxy_admin, n.admin_factory = self._factory_admin(address, code)
         thr = self._uint(address, "getThreshold()")
         owners = self._call(address, "getOwners()")
         if thr is not None and owners and len(owners) >= 64:
@@ -333,18 +384,24 @@ class Prober:
                 n.notes.append("1-of-N Safe: a single key can act")
             elif thr <= count // 2:
                 n.notes.append(f"{thr}-of-{count} Safe: fewer than half the owners are needed")
-        d = self._uint(address, "getMinDelay()")
+        d = self._uint(address, "getMinDelay()")      # OpenZeppelin TimelockController
         if d is None:
-            d = self._uint(address, "getDelay()")   # Aave Governance V3 executors and similar
+            d = self._uint(address, "getDelay()")     # Aave Governance V3 executors and similar
+        if d is None:
+            d = self._uint(address, "minDelay()")     # Solady Timelock
         if d is not None and n.kind == "unknown":
             n.kind = "timelock"
             n.delay = d
         legacy = self._uint(address, "delay()")
         legacy_admin = self._addr(address, "admin()")
         if legacy is not None and legacy_admin and n.kind == "unknown":
-            n.kind = "legacy-timelock"
+            n.kind = "legacy-timelock"            # Compound-style: delay() + admin()
             n.delay = legacy
             n.admin = legacy_admin
+        elif (legacy is not None and n.kind == "unknown" and not n.implementation and not n.beacon
+              and legacy <= 90 * 86400 and self._addr(address, "owner()")):
+            n.kind = "timelock"                   # custom Ownable timelock: delay() + owner()
+            n.delay = legacy
         if n.kind == "unknown":
             n.kind = "proxy" if (n.implementation or n.beacon) else "contract"
         n.owner = self._addr(address, "owner()")
@@ -361,15 +418,26 @@ class Prober:
                 n.notes.append(f"timelock delay is only {n.delay // 3600}h")
         # follow controllers one level down
         if depth < 2:
-            for ctl in {n.owner, n.admin, n.proxy_admin}:
-                if ctl and ctl != address:
-                    c = self.probe(ctl, depth + 1)
-                    if c.kind == "eoa":
-                        n.notes.append(f"controlled by an EOA {ctl}: one private key, no timelock, no multisig")
-                    elif c.kind == "safe" and c.safe_threshold == 1:
-                        n.notes.append(f"controlled by a 1-of-N Safe {ctl}")
-                    elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract"):
-                        n.notes.append(f"no recognised timelock between {ctl} and this contract (OZ TimelockController or Compound Timelock)")
+            links: dict[str, list[str]] = {}
+            if n.proxy_admin and n.proxy_admin != address:
+                links.setdefault(n.proxy_admin, []).append("upgrade admin")
+            if n.owner and n.owner != address:
+                links.setdefault(n.owner, []).append("owner()")
+            if n.admin and n.admin != address and n.admin != n.proxy_admin:
+                links.setdefault(n.admin, []).append("admin()")
+            for ctl, roles in links.items():
+                c = self.probe(ctl, depth + 1)
+                what = " and ".join(roles)
+                if c.kind == "eoa":
+                    n.notes.append(f"{what} is an EOA {ctl}: one private key, no timelock, no multisig")
+                elif c.kind == "safe" and c.safe_threshold == 1:
+                    n.notes.append(f"{what} is a 1-of-N Safe {ctl}")
+                elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract"):
+                    if roles == ["owner()"] and n.proxy_admin and n.proxy_admin != ctl:
+                        n.notes.append(f"owner() is {ctl} with no timelock: owner-level settings change immediately "
+                                       f"(upgrades are separate, via {n.proxy_admin})")
+                    else:
+                        n.notes.append(f"{what} is {ctl} with no recognised timelock in between")
         return n
 
 
@@ -378,7 +446,7 @@ def describe(n: Node) -> str:
     if n.implementation:
         bits.append(f"impl={n.implementation}")
     if n.proxy_admin:
-        bits.append(f"proxyAdmin={n.proxy_admin}")
+        bits.append(f"proxyAdmin={n.proxy_admin}" + (f" (via factory {n.admin_factory})" if n.admin_factory else ""))
     if n.beacon:
         bits.append(f"beacon={n.beacon}")
     if n.owner:

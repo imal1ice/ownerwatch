@@ -15,10 +15,10 @@ def test_probe_classifies_eoa_owner(anvil, artifacts):  # noqa: F811
     n = p.probe(admin.address)
     assert n.kind == "contract"
     assert n.owner == w3.eth.accounts[0]
-    assert any("controlled by an EOA" in x for x in n.notes)
+    assert any("is an EOA" in x for x in n.notes)
     assert p.seen[w3.eth.accounts[0]].kind == "eoa"
     out = describe(n)
-    assert "owner=" in out and "! controlled by an EOA" in out
+    assert "owner=" in out and " is an EOA " in out
     cfg = suggest_config(p, "http://x", "anvil", None, "Test")
     assert admin.address in cfg and w3.eth.accounts[0] not in cfg
 
@@ -57,7 +57,7 @@ def test_markdown_report(anvil, artifacts):  # noqa: F811
     root = p.probe(admin.address)
     md = markdown_report(p, "Test", "anvil", [root])
     assert md.startswith("# Test admin surface on anvil")
-    assert "| contract |" in md and "controlled by an EOA" in md
+    assert "| contract |" in md and "is an EOA" in md
     assert "(contract) -> " in md and "(eoa)" in md
 
 
@@ -69,7 +69,7 @@ def test_probe_from_config(anvil, artifacts, tmp_path, capsys):  # noqa: F811
     cfg.write_text(f"rpc_url: {w3.provider.endpoint_uri}\nchain_name: anvil\ncontracts:\n  - address: '{admin.address}'\n    label: A\n")
     assert main(["probe", "--config", str(cfg), "--markdown", "--label", "Acme"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("# Acme admin surface on anvil") and "controlled by an EOA" in out
+    assert out.startswith("# Acme admin surface on anvil") and "is an EOA" in out
     # --rpc overrides a broken rpc_url for a single-chain config; probe_rpc_url does the same
     cfg.write_text(f"rpc_url: http://127.0.0.1:1\nchain_name: anvil\ncontracts:\n  - address: '{admin.address}'\n")
     assert main(["probe", "--config", str(cfg), "--rpc", w3.provider.endpoint_uri, "--markdown"]) == 0
@@ -149,3 +149,29 @@ def test_get_logs_split_budget():
     p = Prober.__new__(Prober)
     with pytest.raises(RuntimeError, match="budget"):
         p._get_logs_split({"address": "0x0"}, 0, 10_000, w3=_FakeW3(eth), budget=20)
+
+
+def test_factory_stored_admin_and_solady_timelock(anvil, artifacts):  # noqa: F811
+    """A proxy whose upgrade admin lives in its factory must resolve to that admin, not to owner()."""
+    w3 = anvil
+    tl = _deploy(w3, *artifacts["SoladyTimelockLike"])
+    fac = _deploy(w3, *artifacts["ProxyFactoryLike"])
+    impl = _deploy(w3, *artifacts["Admin"])
+    w3.eth.wait_for_transaction_receipt(fac.functions.deploy(impl.address, tl.address).transact({"from": w3.eth.accounts[0]}))
+    proxy = fac.functions.lastProxy().call()
+    p = Prober(w3)
+    n = p.probe(proxy)
+    assert n.kind == "proxy" and n.implementation == impl.address
+    assert n.proxy_admin == tl.address and n.admin_factory == fac.address
+    t = p.seen[tl.address]
+    assert t.kind == "timelock" and t.delay == 86400
+    assert not any("no recognised timelock" in x or "upgrade admin" in x for x in n.notes)
+    md = markdown_report(p, "T", "anvil", [n])
+    assert f"`{tl.address[:6]}…{tl.address[-4:]}`" in md      # controller column shows the timelock, not owner()
+
+
+def test_owned_custom_timelock(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    tl = _deploy(w3, *artifacts["OwnedTimelockLike"])
+    n = Prober(w3).probe(tl.address)
+    assert n.kind == "timelock" and n.delay == 172800
