@@ -73,6 +73,23 @@ contract Proto {
     function poke(address a) external { emit PoolUpdated(address(0), a); emit SetCurator(a); emit SetCap(msg.sender, bytes32(uint256(9)), 5); emit Stopped(); }
 }
 
+contract Payloads {
+    struct ExecutionAction { address target; bool withDelegateCall; uint8 accessLevel; uint256 value; string signature; bytes callData; }
+    event PayloadCreated(uint40 indexed payloadId, address indexed creator, ExecutionAction[] actions, uint8 indexed maximumAccessLevelRequired);
+    event PayloadQueued(uint40 payloadId);
+    event PayloadExecuted(uint40 payloadId);
+    event GuardianUpdated(address oldGuardian, address newGuardian);
+    function poke(address a) external {
+        ExecutionAction[] memory acts = new ExecutionAction[](2);
+        acts[0] = ExecutionAction(a, true, 1, 0, "", abi.encodeWithSignature("execute()"));
+        acts[1] = ExecutionAction(a, false, 1, 0, "setFee(uint256)", abi.encode(uint256(7)));
+        emit PayloadCreated(42, msg.sender, acts, 1);
+        emit PayloadQueued(42);
+        emit PayloadExecuted(42);
+        emit GuardianUpdated(address(0), a);
+    }
+}
+
 contract SafeLike {
     event ExecutionFromModuleSuccess(address indexed module);
     event ExecutionSuccess(bytes32 txHash, uint256 payment);

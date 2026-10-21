@@ -207,7 +207,25 @@ class Watcher:
             args["ntargets"] = len(args.get("targets") or [])
             lines = [ln.strip() for ln in str(args.get("description") or "").splitlines() if ln.strip()]
             args["title"] = lines[0][:120] if lines else "(no description)"
+        if spec.name == "PayloadCreated":
+            args["nactions"] = len(args.get("actions") or [])
         msg = spec.describe.format(**args)
+        if spec.name == "PayloadCreated":
+            parts = []
+            for i, act in enumerate(args.get("actions") or []):
+                a = act._asdict() if hasattr(act, "_asdict") else (dict(act) if hasattr(act, "keys") else
+                     dict(zip(("target", "withDelegateCall", "accessLevel", "value", "signature", "callData"), act)))
+                how = "delegatecall " if a.get("withDelegateCall") else ""
+                sig, data = a.get("signature") or "", a.get("callData") or b""
+                if isinstance(data, (bytes, bytearray)):
+                    data = _hex(data)
+                what = describe_signature_call(sig, data) if sig else describe_call(data, self.chain_id, a.get("target"), self.w3)
+                parts.append(f"{how}{a.get('target')}: {what}")
+                if i == 4 and args["nactions"] > 5:
+                    parts.append(f"... {args['nactions'] - 5} more")
+                    break
+            if parts:
+                msg += " | actions: " + "; ".join(parts)
         if spec.name == "ProposalCreated":
             # decode each action so the alert says what the proposal does, not just that it exists
             targets, datas = args.get("targets") or [], args.get("calldatas") or []

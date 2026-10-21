@@ -19,6 +19,7 @@ Every address in your config gets the full catalog:
 | TimelockController | CallScheduled, CallExecuted, Cancelled, MinDelayChange | high / critical |
 | Legacy Timelock (Compound, Uniswap and forks) | NewAdmin, NewPendingAdmin, NewDelay, QueueTransaction, ExecuteTransaction, CancelTransaction | medium to critical |
 | Governor (OpenZeppelin and GovernorBravo) | ProposalCreated, ProposalQueued, ProposalExecuted, ProposalCanceled, VotingDelaySet, VotingPeriodSet, ProposalThresholdSet, QuorumNumeratorUpdated, TimelockChange, NewImplementation | medium to critical |
+| Aave Governance V3 PayloadsController | PayloadCreated (with decoded actions), PayloadQueued, PayloadExecuted, PayloadCancelled, ExecutorSet, GuardianUpdated | medium to critical |
 | Aragon OS (Lido and others) | SetApp, SetPermission, ChangePermissionManager, StartVote, ExecuteVote | medium to critical |
 | Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler, ExecutionFromModuleSuccess, ExecutionSuccess, ExecutionFailure | info to critical |
 | ERC-20 treasuries | Transfer out above a threshold you set | high |

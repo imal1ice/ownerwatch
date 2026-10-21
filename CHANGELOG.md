@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.7.5 - 2026-10-21
+- Aave Governance V3 PayloadsController: PayloadCreated (actions decoded like proposals), PayloadQueued, PayloadExecuted, PayloadCancelled, ExecutorSet, GuardianUpdated
+
 ## 0.7.4 - 2026-10-21
 - `alerts.jsonl_path`: append every alert as a JSON line to a file, for feeds and archives
 - README and example workflow point at the new `imal1ice/ownerwatch-action@v1` composite action

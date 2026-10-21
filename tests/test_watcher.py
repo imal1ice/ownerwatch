@@ -48,7 +48,7 @@ def anvil():
 def artifacts():
     subprocess.run(["forge", "build", "--root", str(FIXTURES)], check=True, capture_output=True)
     out = {}
-    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto", "SafeLike"):
+    for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto", "SafeLike", "Payloads"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out
@@ -220,3 +220,23 @@ def test_safe_execution_events(anvil, artifacts, tmp_path):
     by = {a.event: a for a in got}
     assert by["ExecutionFromModuleSuccess"].severity == "high" and deployer in by["ExecutionFromModuleSuccess"].message
     assert by["ExecutionSuccess"].severity == "info"
+
+
+def test_aave_payloads_controller(anvil, artifacts, tmp_path, monkeypatch):
+    import ownerwatch.watcher as wmod
+    monkeypatch.setattr(wmod, "describe_call", lambda d, *a: "execute() [0x61461954]")
+    w3 = anvil
+    deployer = w3.eth.accounts[0]
+    pc = _deploy(w3, *artifacts["Payloads"])
+    cfg = Config(rpc_url="unused", chain_name="anvil", confirmations=0, start_block=w3.eth.block_number + 1,
+                 state_file=str(tmp_path / "c.json"), contracts=[Contract(pc.address, "PC")], alerts=Alerts())
+    got: list = []
+    w = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    w3.eth.wait_for_transaction_receipt(pc.functions.poke(w3.eth.accounts[1]).transact({"from": deployer}))
+    assert w.poll_once() == 4
+    by = {a.event: a for a in got}
+    created = by["PayloadCreated"]
+    assert created.source == "AavePayloads" and created.severity == "medium"
+    assert "payload 42 created by " + deployer in created.message and "2 actions" in created.message
+    assert "delegatecall " + w3.eth.accounts[1] + ": execute()" in created.message and "setFee(7)" in created.message
+    assert by["PayloadQueued"].severity == "high" and by["GuardianUpdated"].severity == "critical"
