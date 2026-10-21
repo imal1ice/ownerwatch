@@ -88,6 +88,7 @@ ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --
 ## How it works
 
 - Polls `eth_getLogs` for the catalog's topic hashes on your addresses, in chunks that fit public RPCs.
+- Pick the logs RPC carefully. Some public endpoints return *incomplete* logs without an error: rpc.flashbots.net returned none for the Aave PayloadsController over a week in which Tenderly's gateway returned ten. The examples use `mainnet.gateway.tenderly.co`; verify any other endpoint with `ownerwatch backfill` against a block you know had an event.
 - Waits `confirmations` blocks behind the head so small reorgs don't produce ghost alerts.
 - Persists a block cursor to `state/`, so a restart resumes where it left off with no duplicates.
 - Alert delivery never stops the poller: a dead webhook is logged and skipped.

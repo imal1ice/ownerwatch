@@ -1,4 +1,4 @@
-rpc_url: "https://rpc.flashbots.net"   # accepts 10k-block eth_getLogs ranges; most public RPCs do not
+rpc_url: "https://mainnet.gateway.tenderly.co"   # full-history eth_getLogs over large ranges; most public RPCs cap at 10 to 50 blocks
 probe_rpc_url: "https://eth.drpc.org"   # for `ownerwatch probe --config`; needs eth_call
 chain_name: ethereum
 confirmations: 3

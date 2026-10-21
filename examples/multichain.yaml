@@ -6,7 +6,7 @@ alerts:
   discord_webhook: ""
 chains:
   - chain_name: ethereum
-    rpc_url: "https://rpc.flashbots.net"
+    rpc_url: "https://mainnet.gateway.tenderly.co"
     probe_rpc_url: "https://eth.drpc.org"   # for `ownerwatch probe --config`; needs eth_call
     max_block_range: 10000
     contracts:

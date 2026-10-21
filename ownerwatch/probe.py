@@ -249,7 +249,7 @@ class Prober:
         """Replay RoleGranted/RoleRevoked logs to list current holders per role.
         Scans from the creation block (Sourcify or code binary search) unless
         from_block is given; logs_w3 can be a different RPC that serves wide log
-        ranges (e.g. rpc.flashbots.net, 100k blocks per call) while self.w3 does the reads."""
+        ranges (e.g. the Tenderly public gateways, full history in one call) while self.w3 does the reads."""
         addr = Web3.to_checksum_address(addr)
         granted = _norm(topic0("RoleGranted(bytes32,address,address)"))
         revoked = _norm(topic0("RoleRevoked(bytes32,address,address)"))

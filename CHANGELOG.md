@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Examples and help text use the Tenderly public gateway for logs instead of rpc.flashbots.net, which was found to return incomplete logs silently
 
 ## 0.7.5 - 2026-10-21
 - Aave Governance V3 PayloadsController: PayloadCreated (actions decoded like proposals), PayloadQueued, PayloadExecuted, PayloadCancelled, ExecutorSet, GuardianUpdated

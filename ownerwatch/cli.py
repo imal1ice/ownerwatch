@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--from-block", type=int, default=None,
                     help="with --roles-from-logs: first block to scan (default: creation block from Sourcify or a code search)")
     pr.add_argument("--logs-rpc", default=None,
-                    help="with --roles-from-logs: RPC used only for eth_getLogs, e.g. https://rpc.flashbots.net (100k blocks per call)")
+                    help="with --roles-from-logs: RPC used only for eth_getLogs, e.g. https://mainnet.gateway.tenderly.co (full history, large blocks per call)")
     a = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
