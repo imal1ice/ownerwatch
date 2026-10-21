@@ -71,3 +71,14 @@ def test_daily_digest_fires_once_per_day_change():
     assert digest.event == "DailyDigest" and "critical: 1" in digest.message and "2026-10-14" in digest.message
     assert d.counts == {} and d.maybe_digest("ethereum", 400, today="2026-10-15") is False
     assert Dispatcher(Alerts()).maybe_digest("x", 1, today="2026-10-15") is False   # off by default
+
+
+def test_jsonl_sink_appends_one_line_per_alert(tmp_path):
+    import json
+    path = tmp_path / "out" / "alerts.jsonl"
+    d = Dispatcher(Alerts(jsonl_path=str(path)))
+    d.send(Alert("high", "ethereum", "0xabc", "Timelock", "CallScheduled", "timelock", "queued x", 1, "0xtx"))
+    d.send(Alert("info", "base", "0xdef", "Safe", "AddedOwner", "safe", "owner added", 2, "0xtx2"))
+    rows = [json.loads(l) for l in path.read_text().splitlines()]
+    assert [r["event"] for r in rows] == ["CallScheduled", "AddedOwner"]
+    assert rows[0]["severity"] == "high" and rows[0]["block"] == 1 and rows[0]["ts"].endswith("Z")

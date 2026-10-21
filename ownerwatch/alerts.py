@@ -50,7 +50,7 @@ class Dispatcher:
         for fn in self.extra_sinks:
             fn(alert)
         text = alert.text()
-        for name, fn in (("discord", self._discord), ("slack", self._slack), ("telegram", self._telegram), ("webhook", self._webhook)):
+        for name, fn in (("discord", self._discord), ("slack", self._slack), ("telegram", self._telegram), ("webhook", self._webhook), ("jsonl", self._jsonl)):
             try:
                 fn(alert, text)
             except Exception as e:  # noqa: BLE001
@@ -113,6 +113,15 @@ class Dispatcher:
             requests.post(f"https://api.telegram.org/bot{self.cfg.telegram_bot_token}/sendMessage",
                           json={"chat_id": self.cfg.telegram_chat_id, "text": self._clip(text, 4096),
                                 "disable_web_page_preview": True}, timeout=10).raise_for_status()
+
+    def _jsonl(self, alert: Alert, text: str) -> None:
+        if self.cfg.jsonl_path:
+            import datetime as _dt
+            import os
+            os.makedirs(os.path.dirname(self.cfg.jsonl_path) or ".", exist_ok=True)
+            row = {"ts": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), **asdict(alert)}
+            with open(self.cfg.jsonl_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def _webhook(self, alert: Alert, text: str) -> None:
         if self.cfg.webhook_url:

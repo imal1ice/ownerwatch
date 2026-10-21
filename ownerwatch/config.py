@@ -50,6 +50,7 @@ class Alerts:
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     webhook_url: str = ""
+    jsonl_path: str = ""           # append every alert as one JSON line to this file (feeds, archives, tests)
     heartbeat_url: str = ""        # GET after every successful poll (healthchecks.io, Better Uptime, cron monitors)
     daily_digest: bool = False     # once a day (UTC) post a one-line summary: alerts by severity, head block, uptime
     min_severity: str = "info"
