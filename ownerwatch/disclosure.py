@@ -19,7 +19,6 @@ NODE_TYPES = {"eoa": "EOA", "safe": "MULTISIG", "timelock": "TIMELOCK", "legacy-
               "proxy": "CONTRACT", "contract": "CONTRACT"}
 # PowerKinds chain state can settle. Anything else is reported as unverifiable, never as ok.
 VERIFIABLE = {"UPGRADE", "OWNERSHIP", "ROLE"}
-ROLE_BY_HASH = {"0x" + bytes(v).hex(): k for k, v in ROLES.items()}
 
 
 def manifest_hash(d: dict) -> str:
@@ -29,29 +28,52 @@ def manifest_hash(d: dict) -> str:
     return "0x" + Web3.keccak(text=json.dumps(body, sort_keys=True, separators=(",", ":"))).hex().removeprefix("0x")
 
 
-def _role_bytes(role: str) -> bytes:
-    if role in ROLES:
-        return bytes(ROLES[role])
-    if role.startswith("0x") and len(role) == 66:
-        return bytes.fromhex(role[2:])
-    return bytes(Web3.keccak(text=role))
-
-
-def _role_name(role: str) -> str:
-    return role if role in ROLES else ROLE_BY_HASH.get("0x" + _role_bytes(role).hex(), role)
-
-
 def _a(x: str | None) -> str | None:
     return Web3.to_checksum_address(x) if x else None
 
 
 class Checker:
-    def __init__(self, w3: Web3, block: int | None = None):
+    def __init__(self, w3: Web3, block: int | None = None, roles_from_logs: bool = False,
+                 logs_w3: Web3 | None = None, from_block: int | None = None):
         self.w3 = w3
         self.block = block if block is not None else w3.eth.block_number
         w3.eth.default_block = self.block          # every read below is at this one block
         self.prober = Prober(w3)
         self.results: list[dict] = []
+        # replay RoleGranted/RoleRevoked up to the pinned block, so every role holder is found, not only those
+        # among addresses someone already named
+        self.roles_from_logs, self.logs_w3, self.from_block = roles_from_logs, logs_w3, from_block
+        self._names: dict[str, dict[str, str]] = {}
+
+    def _role_names(self, addr: str) -> dict[str, str]:
+        """Role name -> hash for one contract: the common roles, plus the contract's own bytes32 getters
+        (POOL_ADMIN_ROLE() and the like) from its verified ABI."""
+        if addr not in self._names:
+            m = {k: "0x" + bytes(v).hex() for k, v in ROLES.items()}
+            m.update({getter: h for h, getter in self.prober.role_names(addr).items()})
+            self._names[addr] = m
+        return self._names[addr]
+
+    def _role_hash(self, addr: str, role: str) -> str:
+        if role.startswith("0x") and len(role) == 66:
+            return role.lower()
+        return self._role_names(addr).get(role) or "0x" + bytes(Web3.keccak(text=role)).hex()
+
+    def _role_label(self, addr: str, h: str) -> str:
+        return {v: k for k, v in self._role_names(addr).items()}.get(h, h)
+
+    def observed_roles(self, t) -> dict[str, list[str]]:
+        """Role hash -> holders at the pinned block. From the log replay when enabled (each holder confirmed
+        with hasRole at the pinned block), else from the hasRole sweep over named addresses."""
+        if self.roles_from_logs and self.prober._supports_access_control(t.address):
+            out = {}
+            for name, holders in self.prober.role_history(t.address, self.from_block, self.logs_w3, to_block=self.block).items():
+                h = self._role_hash(t.address, name)
+                held = [x for x in holders if self.prober._has_role(t.address, bytes.fromhex(h[2:]), x)]
+                if held:
+                    out[h] = held
+            return out
+        return {self._role_hash(t.address, name): hs for name, hs in t.roles.items()}
 
     def _add(self, record: str, rid: str, status: str, detail: str, declared=None, observed=None) -> None:
         self.results.append({"record": record, "id": rid, "status": status, "detail": detail,
@@ -153,9 +175,9 @@ class Checker:
                 obs, key = target.owner, ("OWNERSHIP", target.address, None)
                 ok = ctl == obs
             else:
-                role = p.get("role") or "DEFAULT_ADMIN_ROLE"
-                key = ("ROLE", target.address, _role_name(role))
-                obs = self.prober._has_role(target.address, _role_bytes(role), ctl) if ctl else None
+                h = self._role_hash(target.address, p.get("role") or "DEFAULT_ADMIN_ROLE")
+                key = ("ROLE", target.address, h)
+                obs = self.prober._has_role(target.address, bytes.fromhex(h[2:]), ctl) if ctl else None
                 ok = obs is True
             declared_keys.add(key + (ctl,))
             n_before = len(self.results)
@@ -185,24 +207,29 @@ class Checker:
                 seen.append(("UPGRADE", None, t.proxy_admin))
             if t.owner:
                 seen.append(("OWNERSHIP", None, t.owner))
-            for role, holders in t.roles.items():
-                seen += [("ROLE", role, h) for h in holders]
+            for h, holders in self.observed_roles(t).items():
+                seen += [("ROLE", h, x) for x in holders]
             for kind, role, holder in seen:
                 if holder and (kind, t.address, role, holder) not in declared_keys:
-                    undisclosed.append({"component": cid, "kind": kind, "role": role, "holder": holder,
-                                        "holderType": NODE_TYPES.get(self._node(holder).kind, "?")})
+                    undisclosed.append({"component": cid, "kind": kind, "role": self._role_label(t.address, role) if role else None,
+                                        "holder": holder, "holderType": NODE_TYPES.get(self._node(holder).kind, "?")})
         block = self.w3.eth.get_block(self.block)
         summary = {s: sum(1 for r in self.results if r["status"] == s) for s in ("ok", "mismatch", "unverifiable")}
         summary["undisclosed"] = len(undisclosed)
         return {"block": self.block, "blockHash": "0x" + bytes(block["hash"]).hex(), "chainId": self.w3.eth.chain_id,
                 "nonce": d.get("nonce"), "summary": summary, "results": self.results, "undisclosed": undisclosed,
-                "scope": "completeness is checked over the declared components only, for upgrade admins, owner() and the "
-                         "roles ownerwatch tests (" + ", ".join(ROLES) + ") held by addresses the disclosure or the chain names"}
+                "scope": ("completeness is checked over the declared components only, for upgrade admins, owner() and every "
+                          "AccessControl role holder replayed from RoleGranted/RoleRevoked logs up to the pinned block"
+                          if self.roles_from_logs else
+                          "completeness is checked over the declared components only, for upgrade admins, owner() and the "
+                          "roles ownerwatch tests (" + ", ".join(ROLES) + ") held by addresses the disclosure or the chain "
+                          "names; replay role logs for every holder")}
 
 
-def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None) -> dict:
+def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, roles_from_logs: bool = False,
+          logs_w3: Web3 | None = None, from_block: int | None = None) -> dict:
     """A starting disclosure from chain state: one component per address, one node per controller, the powers seen."""
-    ck = Checker(w3, block)
+    ck = Checker(w3, block, roles_from_logs, logs_w3, from_block)
     p = ck.prober
     roots = [p.probe(a) for a in addresses]
     p.check_roles(list(p.seen.keys()))
@@ -232,9 +259,11 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None) -
         if r.owner:
             powers.append({"powerId": f"ownership-{cid}", "kind": "OWNERSHIP", "enabled": True, "target": cid,
                            "controllerNodeId": nid(r.owner)})
-        for role, holders in r.roles.items():
+        for rh, holders in ck.observed_roles(r).items():
+            role = ck._role_label(r.address, rh)
             for h in holders:
-                powers.append({"powerId": f"{role.lower()}-{cid}-{h[2:8].lower()}", "kind": "ROLE", "role": role,
+                p.seen.get(h) or p.probe(h, depth=2)
+                powers.append({"powerId": f"{role.lower()[:24]}-{cid}-{h[2:8].lower()}", "kind": "ROLE", "role": role,
                                "enabled": True, "target": cid, "controllerNodeId": nid(h)})
         comps.append(comp)
     # the chain above the direct controllers, as edges: who owns or upgrades each controller, up to a few hops

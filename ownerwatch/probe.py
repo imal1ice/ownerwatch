@@ -271,7 +271,7 @@ class Prober:
         return out
 
     def role_history(self, addr: str, from_block: int | None = None, logs_w3: Web3 | None = None,
-                     log=None) -> dict[str, list[str]]:
+                     log=None, to_block: int | None = None) -> dict[str, list[str]]:
         """Replay RoleGranted/RoleRevoked logs to list current holders per role.
         Scans from the creation block (Sourcify or code binary search) unless
         from_block is given; logs_w3 can be a different RPC that serves wide log
@@ -287,13 +287,13 @@ class Prober:
         if logs_w3 is None and self.w3.eth.chain_id in PUBLIC_LOG_RPCS:
             try:
                 public = Web3(Web3.HTTPProvider(PUBLIC_LOG_RPCS[self.w3.eth.chain_id], request_kwargs={"timeout": 60}))
-                logs = self._get_logs_split(params, from_block, public.eth.block_number, w3=public, log=log)
+                logs = self._get_logs_split(params, from_block, to_block or public.eth.block_number, w3=public, log=log)
             except Exception as e:  # noqa: BLE001
                 if log:
                     log(f"  public log gateway failed ({e}); falling back to --rpc")
-                logs = self._get_logs_split(params, from_block, self.w3.eth.block_number, log=log)
+                logs = self._get_logs_split(params, from_block, to_block or self.w3.eth.block_number, log=log)
         else:
-            logs = self._get_logs_split(params, from_block, (logs_w3 or self.w3).eth.block_number, w3=logs_w3, log=log)
+            logs = self._get_logs_split(params, from_block, to_block or (logs_w3 or self.w3).eth.block_number, w3=logs_w3, log=log)
         logs.sort(key=lambda l: (l["blockNumber"], l["logIndex"]))
         names = {("0x" + bytes(v).hex()): k for k, v in ROLES.items()}
         names.update(self.role_names(addr))

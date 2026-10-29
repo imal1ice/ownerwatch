@@ -181,3 +181,20 @@ contract PayloadsControllerLike {
         return _executors[level];
     }
 }
+// AccessControl as it shows on-chain: grants and revokes emit the standard events; a protocol-specific role.
+contract RoleLog {
+    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+    mapping(bytes32 => mapping(address => bool)) public hasRole;
+    bytes32 public constant POOL_ADMIN_ROLE = keccak256("POOL_ADMIN");
+    constructor() { _grant(bytes32(0), msg.sender); }
+    function grantRole(bytes32 role, address account) external { _grant(role, account); }
+    function revokeRole(bytes32 role, address account) external {
+        hasRole[role][account] = false;
+        emit RoleRevoked(role, account, msg.sender);
+    }
+    function _grant(bytes32 role, address account) internal {
+        hasRole[role][account] = true;
+        emit RoleGranted(role, account, msg.sender);
+    }
+}

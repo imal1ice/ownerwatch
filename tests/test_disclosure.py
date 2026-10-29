@@ -99,3 +99,27 @@ def test_node_parameters_are_checked(anvil, artifacts):  # noqa: F811
     report = Checker(w3).check(d)
     [r] = [r for r in report["results"] if r["record"] == "node" and r["id"] == node["nodeId"]]
     assert r["status"] == "mismatch" and "delay declared 86400, on-chain 172800" in r["detail"]
+
+
+def test_role_replay_finds_holders_nobody_named(anvil, artifacts):  # noqa: F811
+    """A protocol-specific role held by an address neither the disclosure nor any owner/admin names is invisible
+    to the hasRole sweep and found by the log replay; a granted-then-revoked role is not reported."""
+    from web3 import Web3
+    w3 = anvil
+    acct = w3.eth.accounts
+    rl = _deploy(w3, *artifacts["RoleLog"])
+    pool_admin = Web3.keccak(text="POOL_ADMIN")
+    pauser = Web3.keccak(text="PAUSER_ROLE")
+    for tx in (rl.functions.grantRole(pool_admin, acct[3]), rl.functions.grantRole(pauser, acct[4]),
+               rl.functions.revokeRole(pauser, acct[4])):
+        w3.eth.wait_for_transaction_receipt(tx.transact({"from": acct[0]}))
+    d = draft(w3, [rl.address], "T")      # sweep only: no owner or admin names the holders, so it finds none
+    assert [p for p in d["powers"] if p["kind"] == "ROLE"] == []
+    assert Checker(w3).check(d)["undisclosed"] == []
+    report = Checker(w3, roles_from_logs=True, from_block=0).check(d)
+    holders = sorted((u["role"], u["holder"]) for u in report["undisclosed"])
+    assert holders == sorted([("DEFAULT_ADMIN_ROLE", acct[0]), ("0x" + bytes(pool_admin).hex(), acct[3])])
+    assert "replayed from RoleGranted/RoleRevoked logs" in report["scope"]
+    full = draft(w3, [rl.address], "T", roles_from_logs=True, from_block=0)
+    assert len([p for p in full["powers"] if p["kind"] == "ROLE"]) == 2
+    assert Checker(w3, roles_from_logs=True, from_block=0).check(full)["undisclosed"] == []
