@@ -24,6 +24,7 @@ class Alert:
     message: str
     block: int
     tx_hash: str
+    block_time: str = ""   # the block's timestamp (UTC, ISO), when the watcher could read it
 
     def text(self) -> str:
         return (f"[{self.severity.upper()}] {self.label} ({self.contract}) on {self.chain}\n"
@@ -119,7 +120,7 @@ class Dispatcher:
             import datetime as _dt
             import os
             os.makedirs(os.path.dirname(self.cfg.jsonl_path) or ".", exist_ok=True)
-            row = {"ts": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), **asdict(alert)}
+            row = {"ts": alert.block_time or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), **asdict(alert)}
             with open(self.cfg.jsonl_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
 

@@ -318,6 +318,152 @@ CATALOG: list[EventSpec] = [
         "high", "Safe fallback handler changed to {handler}", "Safe"),
 ]
 
+
+def _single(name: str, typ: str, arg: str, indexed: bool, severity: str, describe: str, source: str) -> EventSpec:
+    return EventSpec(name, f"{name}({typ})", _abi(name, _inp(arg, typ, indexed)), severity, describe, source)
+
+
+def _bare(name: str, severity: str, describe: str, source: str) -> EventSpec:
+    return EventSpec(name, f"{name}()", _abi(name), severity, describe, source)
+
+
+_EXTERNAL_CALLS = {"name": "calls", "type": "tuple[]", "indexed": False, "components": [
+    _inp("target", "address", False), _inp("value", "uint96", False), _inp("payload", "bytes", False)]}
+_DG_CONTEXT = {"name": "context", "type": "tuple", "indexed": False, "components": [
+    _inp("state", "uint8", False), _inp("enteredAt", "uint40", False), _inp("vetoSignallingActivatedAt", "uint40", False),
+    _inp("signallingEscrow", "address", False), _inp("rageQuitRound", "uint8", False),
+    _inp("vetoSignallingReactivationTime", "uint40", False), _inp("normalOrVetoCooldownExitedAt", "uint40", False),
+    _inp("rageQuitEscrow", "address", False), _inp("configProvider", "address", False)]}
+# Lido Dual Governance states, in the contract's enum order.
+DG_STATES = ["NotInitialized", "Normal", "VetoSignalling", "VetoSignallingDeactivation", "VetoCooldown", "RageQuit"]
+
+CATALOG += [
+    # Sky (MakerDAO) governance: DSChief elects the hat; DSPause owner/authority. Spells themselves are DSNote
+    # notes, decoded from NOTE_SPECS below.
+    _single("Lift", "address", "whom", True, "critical", "new hat lifted in the chief: {whom}", "DSChief"),
+    _single("LogSetOwner", "address", "owner", True, "critical", "owner set to {owner}", "DSAuth"),
+    _single("LogSetAuthority", "address", "authority", True, "critical", "authority set to {authority}", "DSAuth"),
+    # Lido Dual Governance and its Emergency Protected Timelock. Executions emit ProposalExecuted(uint256),
+    # the same signature as Governor's, so the Governor entry above decodes them.
+    EventSpec("ProposalSubmitted", "ProposalSubmitted(uint256,address,(address,uint96,bytes)[])",
+              _abi("ProposalSubmitted", _inp("id", "uint256", True), _inp("executor", "address", True), _EXTERNAL_CALLS),
+              "medium", "timelock proposal {id} submitted for executor {executor}, {ncalls} calls", "EmergencyProtectedTimelock"),
+    _single("ProposalScheduled", "uint256", "id", True, "high", "timelock proposal {id} scheduled for execution", "EmergencyProtectedTimelock"),
+    _single("ProposalsCancelledTill", "uint256", "proposalId", False, "medium", "all timelock proposals up to {proposalId} cancelled", "EmergencyProtectedTimelock"),
+    _single("GovernanceSet", "address", "newGovernance", False, "critical", "timelock governance set to {newGovernance}", "EmergencyProtectedTimelock"),
+    _single("AdminExecutorSet", "address", "newAdminExecutor", False, "critical", "timelock admin executor set to {newAdminExecutor}", "EmergencyProtectedTimelock"),
+    _single("AfterSubmitDelaySet", "uint32", "newAfterSubmitDelay", False, "critical", "timelock after-submit delay set to {newAfterSubmitDelay}s", "EmergencyProtectedTimelock"),
+    _single("AfterScheduleDelaySet", "uint32", "newAfterScheduleDelay", False, "critical", "timelock after-schedule delay set to {newAfterScheduleDelay}s", "EmergencyProtectedTimelock"),
+    _single("EmergencyGovernanceSet", "address", "newEmergencyGovernance", False, "critical", "emergency governance set to {newEmergencyGovernance}", "EmergencyProtectedTimelock"),
+    _single("EmergencyActivationCommitteeSet", "address", "newActivationCommittee", False, "critical", "emergency activation committee set to {newActivationCommittee}", "EmergencyProtectedTimelock"),
+    _single("EmergencyExecutionCommitteeSet", "address", "newExecutionCommittee", False, "critical", "emergency execution committee set to {newExecutionCommittee}", "EmergencyProtectedTimelock"),
+    _single("EmergencyProtectionEndDateSet", "uint40", "newEmergencyProtectionEndDate", False, "critical", "emergency protection end date set to {newEmergencyProtectionEndDate}", "EmergencyProtectedTimelock"),
+    _single("EmergencyModeDurationSet", "uint32", "newEmergencyModeDuration", False, "critical", "emergency mode duration set to {newEmergencyModeDuration}s", "EmergencyProtectedTimelock"),
+    _bare("EmergencyModeActivated", "critical", "emergency mode activated", "EmergencyProtectedTimelock"),
+    _bare("EmergencyModeDeactivated", "high", "emergency mode deactivated", "EmergencyProtectedTimelock"),
+    EventSpec("ProposalSubmitted", "ProposalSubmitted(address,uint256,string)",
+              _abi("ProposalSubmitted", _inp("proposerAccount", "address", True), _inp("proposalId", "uint256", True), _inp("metadata", "string", False)),
+              "medium", "Dual Governance proposal {proposalId} submitted by {proposerAccount}: {metadata}", "DualGovernance"),
+    EventSpec("DualGovernanceStateChanged", "DualGovernanceStateChanged(uint8,uint8,(uint8,uint40,uint40,address,uint8,uint40,uint40,address,address))",
+              _abi("DualGovernanceStateChanged", _inp("from", "uint8", True), _inp("to", "uint8", True), _DG_CONTEXT),
+              "high", "Dual Governance state {fromState} -> {toState}", "DualGovernance"),
+    EventSpec("ProposerRegistered", "ProposerRegistered(address,address)",
+              _abi("ProposerRegistered", _inp("proposerAccount", "address", True), _inp("executor", "address", True)),
+              "critical", "Dual Governance proposer {proposerAccount} registered with executor {executor}", "DualGovernance"),
+    EventSpec("ProposerUnregistered", "ProposerUnregistered(address,address)",
+              _abi("ProposerUnregistered", _inp("proposerAccount", "address", True), _inp("executor", "address", True)),
+              "critical", "Dual Governance proposer {proposerAccount} unregistered", "DualGovernance"),
+    EventSpec("ProposerExecutorSet", "ProposerExecutorSet(address,address)",
+              _abi("ProposerExecutorSet", _inp("proposerAccount", "address", True), _inp("executor", "address", True)),
+              "critical", "Dual Governance executor of {proposerAccount} set to {executor}", "DualGovernance"),
+    _single("ResealCommitteeSet", "address", "resealCommittee", True, "critical", "reseal committee set to {resealCommittee}", "DualGovernance"),
+    _single("ResealManagerSet", "address", "resealManager", True, "critical", "reseal manager set to {resealManager}", "DualGovernance"),
+    _single("TiebreakerCommitteeSet", "address", "newTiebreakerCommittee", False, "critical", "tiebreaker committee set to {newTiebreakerCommittee}", "DualGovernance"),
+    _single("TiebreakerActivationTimeoutSet", "uint32", "newTiebreakerActivationTimeout", False, "critical", "tiebreaker activation timeout set to {newTiebreakerActivationTimeout}s", "DualGovernance"),
+    _single("ProposalsCancellerSet", "address", "proposalsCanceller", True, "critical", "proposals canceller set to {proposalsCanceller}", "DualGovernance"),
+    _single("ConfigProviderSet", "address", "newConfigProvider", True, "critical", "Dual Governance config provider set to {newConfigProvider}", "DualGovernance"),
+    _single("SealableWithdrawalBlockerAdded", "address", "sealable", False, "high", "sealable withdrawal blocker added: {sealable}", "DualGovernance"),
+    _single("SealableWithdrawalBlockerRemoved", "address", "sealable", False, "high", "sealable withdrawal blocker removed: {sealable}", "DualGovernance"),
+    # Rocket Pool DAOs: protocol DAO proposals, the shared oDAO/security council proposals, contract upgrades.
+    EventSpec("ProposalExecuted", "ProposalExecuted(uint256,address,uint256)",
+              _abi("ProposalExecuted", _inp("proposalID", "uint256", True), _inp("executor", "address", True), _inp("time", "uint256", False)),
+              "high", "Rocket Pool DAO proposal {proposalID} executed by {executor}", "RocketDAO"),
+    EventSpec("ProposalAdded", "ProposalAdded(address,uint256,bytes,uint256)",
+              _abi("ProposalAdded", _inp("proposer", "address", True), _inp("proposalID", "uint256", True), _inp("payload", "bytes", False), _inp("time", "uint256", False)),
+              "medium", "Rocket Pool protocol DAO proposal {proposalID} added by {proposer}", "RocketDAO"),
+    EventSpec("ProposalAdded", "ProposalAdded(address,string,uint256,bytes,uint256)",
+              _abi("ProposalAdded", _inp("proposer", "address", True), _inp("proposalDAO", "string", True), _inp("proposalID", "uint256", True),
+                   _inp("payload", "bytes", False), _inp("time", "uint256", False)),
+              "medium", "Rocket Pool DAO proposal {proposalID} added by {proposer}", "RocketDAO"),
+    EventSpec("ProposalDestroyed", "ProposalDestroyed(uint256,uint256)",
+              _abi("ProposalDestroyed", _inp("proposalID", "uint256", True), _inp("time", "uint256", False)),
+              "medium", "Rocket Pool protocol DAO proposal {proposalID} destroyed", "RocketDAO"),
+    EventSpec("UpgradePending", "UpgradePending(uint256,bytes32,bytes32,uint256)",
+              _abi("UpgradePending", _inp("upgradeProposalID", "uint256", False), _inp("upgradeType", "bytes32", True), _inp("name", "bytes32", True), _inp("time", "uint256", False)),
+              "high", "Rocket Pool upgrade {upgradeProposalID} pending ({name})", "RocketDAO"),
+    EventSpec("UpgradeVetoed", "UpgradeVetoed(uint256,uint256)",
+              _abi("UpgradeVetoed", _inp("upgradeProposalID", "uint256", False), _inp("time", "uint256", False)),
+              "medium", "Rocket Pool upgrade {upgradeProposalID} vetoed", "RocketDAO"),
+    EventSpec("ContractUpgraded", "ContractUpgraded(bytes32,address,address,uint256)",
+              _abi("ContractUpgraded", _inp("name", "bytes32", True), _inp("oldAddress", "address", True), _inp("newAddress", "address", True), _inp("time", "uint256", False)),
+              "critical", "Rocket Pool contract {name} upgraded {oldAddress} -> {newAddress}", "RocketDAO"),
+    EventSpec("ContractAdded", "ContractAdded(bytes32,address,uint256)",
+              _abi("ContractAdded", _inp("name", "bytes32", True), _inp("newAddress", "address", True), _inp("time", "uint256", False)),
+              "critical", "Rocket Pool contract {name} added at {newAddress}", "RocketDAO"),
+    EventSpec("GuardianChanged", "GuardianChanged(address,address)",
+              _abi("GuardianChanged", _inp("oldGuardian", "address", False), _inp("newGuardian", "address", False)),
+              "critical", "RocketStorage guardian changed {oldGuardian} -> {newGuardian}", "RocketDAO"),
+    # CoW Protocol solver allow-list (GPv2AllowListAuthentication).
+    _single("SolverAdded", "address", "solver", False, "high", "solver added to the allow-list: {solver}", "GPv2AllowList"),
+    _single("SolverRemoved", "address", "solver", False, "high", "solver removed from the allow-list: {solver}", "GPv2AllowList"),
+    EventSpec("ManagerChanged", "ManagerChanged(address,address)",
+              _abi("ManagerChanged", _inp("newManager", "address", False), _inp("oldManager", "address", False)),
+              "critical", "allow-list manager changed {oldManager} -> {newManager}", "GPv2AllowList"),
+    EventSpec("ProxyImplementationUpdated", "ProxyImplementationUpdated(address,address)",
+              _abi("ProxyImplementationUpdated", _inp("previousImplementation", "address", True), _inp("newImplementation", "address", True)),
+              "critical", "proxy implementation updated {previousImplementation} -> {newImplementation}", "EIP-173 proxy"),
+    # Gearbox ACL.
+    _single("PausableAdminAdded", "address", "newAdmin", True, "high", "pausable admin added: {newAdmin}", "GearboxACL"),
+    _single("PausableAdminRemoved", "address", "admin", True, "high", "pausable admin removed: {admin}", "GearboxACL"),
+    _single("UnpausableAdminAdded", "address", "newAdmin", True, "high", "unpausable admin added: {newAdmin}", "GearboxACL"),
+    _single("UnpausableAdminRemoved", "address", "admin", True, "high", "unpausable admin removed: {admin}", "GearboxACL"),
+    # 0x Settler deployer. Its ERC-721 Transfers only move a feature's token to the newest deployment, alongside
+    # Deployed, so they are not watched.
+    EventSpec("Deployed", "Deployed(uint128,uint32,address)",
+              _abi("Deployed", _inp("feature", "uint128", True), _inp("nonce", "uint32", True), _inp("deployed", "address", True)),
+              "critical", "new code deployed for feature {feature} (nonce {nonce}) at {deployed}", "SettlerDeployer"),
+    EventSpec("Removed", "Removed(uint128,uint32,address)",
+              _abi("Removed", _inp("feature", "uint128", True), _inp("nonce", "uint32", True), _inp("deployed", "address", True)),
+              "high", "deployment {deployed} of feature {feature} (nonce {nonce}) removed", "SettlerDeployer"),
+    _single("RemovedAll", "uint128", "feature", True, "high", "all deployments of feature {feature} removed", "SettlerDeployer"),
+    EventSpec("Authorized", "Authorized(uint128,address,uint40)",
+              _abi("Authorized", _inp("feature", "uint128", True), _inp("who", "address", True), _inp("deadline", "uint40", False)),
+              "high", "{who} authorized to deploy feature {feature} until {deadline}", "SettlerDeployer"),
+]
+
+@dataclass(frozen=True)
+class NoteSpec:
+    """A DSNote call log: anonymous, topic0 is the function selector, topics 1-3 are msg.sender and the
+    first two words of calldata, data carries msg.value and the full calldata."""
+    name: str
+    signature: str
+    args: tuple[str, ...]
+    severity: str
+    describe: str
+    source: str = "DSPause"
+
+
+# Sky's governance pause: spells are plotted (scheduled), then exec'd after the delay.
+NOTE_SPECS: dict[str, NoteSpec] = {}
+for _n in [
+    NoteSpec("SpellPlotted", "plot(address,bytes32,bytes,uint256)", ("usr", "tag", "fax", "eta"),
+             "high", "spell {usr} plotted, executable from {eta_iso}"),
+    NoteSpec("SpellExecuted", "exec(address,bytes32,bytes,uint256)", ("usr", "tag", "fax", "eta"), "high", "spell {usr} executed"),
+    NoteSpec("SpellDropped", "drop(address,bytes32,bytes,uint256)", ("usr", "tag", "fax", "eta"), "medium", "spell {usr} dropped"),
+    NoteSpec("PauseDelaySet", "setDelay(uint256)", ("delay",), "critical", "pause delay set to {delay}s"),
+]:
+    NOTE_SPECS["0x" + Web3.keccak(text=_n.signature).hex().removeprefix("0x")[:8] + "00" * 28] = _n
+
 TRANSFER_SPEC = EventSpec(
     "Transfer", "Transfer(address,address,uint256)",
     _abi("Transfer", _inp("from", "address", True), _inp("to", "address", True), _inp("value", "uint256", False)),
@@ -353,7 +499,14 @@ def _norm(t: str) -> str:
 BY_TOPIC: dict[str, EventSpec] = {_norm(topic0(s.signature)): s for s in CATALOG}
 TRANSFER_TOPIC = _norm(topic0(TRANSFER_SPEC.signature))
 ERC1155_TOPICS = [_norm(topic0(ERC1155_SINGLE_SPEC.signature)), _norm(topic0(ERC1155_BATCH_SPEC.signature))]
-ADMIN_TOPICS: list[str] = list(BY_TOPIC.keys())
+# Same signature as a CATALOG entry but a different `indexed` layout, so the same topic0 needs a second decoder.
+VARIANTS: list[EventSpec] = [
+    _single("ProposalExecuted", "uint256", "id", True, "high", "timelock proposal {id} executed", "EmergencyProtectedTimelock"),
+]
+VARIANTS_BY_TOPIC: dict[str, list[EventSpec]] = {}
+for _v in VARIANTS:
+    VARIANTS_BY_TOPIC.setdefault(_norm(topic0(_v.signature)), []).append(_v)
+ADMIN_TOPICS: list[str] = list(BY_TOPIC.keys()) + list(NOTE_SPECS.keys())
 
 
 def severity_rank(level: str) -> int:

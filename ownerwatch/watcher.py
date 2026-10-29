@@ -11,8 +11,9 @@ from .alerts import Alert, Dispatcher
 from .config import Config
 from .decode import describe_call, describe_signature_call
 from .safe import SafeQueueWatcher, SafeTarget
-from .events import (ADMIN_TOPICS, BY_TOPIC, ERC721_TRANSFER_SPEC, ERC1155_BATCH_SPEC, ERC1155_SINGLE_SPEC,
-                     ERC1155_TOPICS, TRANSFER_SPEC, TRANSFER_TOPIC)
+from .events import (ADMIN_TOPICS, BY_TOPIC, DG_STATES, ERC721_TRANSFER_SPEC, ERC1155_BATCH_SPEC, ERC1155_SINGLE_SPEC,
+                     ERC1155_TOPICS, NOTE_SPECS, TRANSFER_SPEC, TRANSFER_TOPIC,
+                     VARIANTS_BY_TOPIC)
 
 log = logging.getLogger("ownerwatch")
 
@@ -56,9 +57,12 @@ class Watcher:
         except Exception:  # noqa: BLE001
             self.chain_id = None
         self.admin_addresses = [c.address for c in cfg.contracts]
+        self._block_times: dict[int, str] = {}
         self.cursor = Cursor(cfg.state_file)
         # decoder contracts: one per event spec, address-less
         self._decoders = {t: self.w3.eth.contract(abi=[s.abi]).events[s.name]() for t, s in BY_TOPIC.items()}
+        self._variants = {t: [(v, self.w3.eth.contract(abi=[v.abi]).events[v.name]()) for v in vs]
+                          for t, vs in VARIANTS_BY_TOPIC.items()}
         self._transfer = self.w3.eth.contract(abi=[TRANSFER_SPEC.abi]).events.Transfer()
         self._erc721 = self.w3.eth.contract(abi=[ERC721_TRANSFER_SPEC.abi]).events.Transfer()
         self._e1155_single = self.w3.eth.contract(abi=[ERC1155_SINGLE_SPEC.abi]).events.TransferSingle()
@@ -177,8 +181,20 @@ class Watcher:
                 if a:
                     alerts.append(a)
         for a in alerts:
+            a.block_time = self._block_time(a.block)
             self.dispatcher.send(a)
         return len(alerts)
+
+    def _block_time(self, block: int) -> str:
+        """The block's timestamp, so alerts are dated when the event happened, not when a poll noticed it."""
+        if block not in self._block_times:
+            try:
+                ts = self.w3.eth.get_block(block)["timestamp"]
+                self._block_times[block] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+            except Exception as e:  # noqa: BLE001
+                log.debug("no timestamp for block %s: %s", block, e)
+                return ""
+        return self._block_times[block]
 
     # ---- decoding -----------------------------------------------------------------
     def _link(self, tx_hash: str) -> str:
@@ -193,13 +209,18 @@ class Watcher:
 
     def _decode_admin_inner(self, lg) -> Alert | None:
         t0 = _hex(lg["topics"][0])
-        spec = BY_TOPIC.get(t0)
-        if not spec:
+        if t0 in NOTE_SPECS:
+            return self._decode_note(lg, NOTE_SPECS[t0])
+        if t0 not in BY_TOPIC:
             return None
-        try:
-            ev = self._decoders[t0].process_log(lg)
-        except Exception as e:  # noqa: BLE001
-            log.debug("undecodable log %s: %s", t0, e)
+        # a topic can have layouts that differ only in `indexed`; the first that decodes wins
+        for spec, decoder in [(BY_TOPIC[t0], self._decoders[t0]), *self._variants.get(t0, [])]:
+            try:
+                ev = decoder.process_log(lg)
+                break
+            except Exception as e:  # noqa: BLE001
+                log.debug("log %s does not decode as %s: %s", t0, spec.source, e)
+        else:
             return None
         args = {k: (_hex(v) if isinstance(v, (bytes, bytearray)) else v) for k, v in dict(ev["args"]).items()}
         addr = Web3.to_checksum_address(lg["address"])
@@ -209,6 +230,11 @@ class Watcher:
             args["title"] = lines[0][:120] if lines else "(no description)"
         if spec.name == "PayloadCreated":
             args["nactions"] = len(args.get("actions") or [])
+        if spec.name == "ProposalSubmitted" and "calls" in args:
+            args["ncalls"] = len(args.get("calls") or [])
+        if spec.name == "DualGovernanceStateChanged":
+            name = lambda i: DG_STATES[i] if 0 <= i < len(DG_STATES) else str(i)
+            args["fromState"], args["toState"] = name(args["from"]), name(args["to"])
         msg = spec.describe.format(**args)
         if spec.name == "PayloadCreated":
             parts = []
@@ -250,6 +276,24 @@ class Watcher:
             severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
             label=self.labels.get(addr, addr), event=spec.name, source=spec.source,
             message=msg, block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
+
+    def _decode_note(self, lg, spec) -> Alert | None:
+        """A DSNote log (Sky's pause): rebuild the call from the calldata the note carries."""
+        from eth_abi import decode as abi_decode
+        _wad, fax = abi_decode(["uint256", "bytes"], bytes(lg["data"]))
+        types = spec.signature[spec.signature.index("(") + 1:-1].split(",")   # no tuples in the note signatures
+        values = abi_decode(types, bytes(fax)[4:])
+        args = dict(zip(spec.args, values))
+        args = {k: (_hex(v) if isinstance(v, (bytes, bytearray)) else v) for k, v in args.items()}
+        if "usr" in args:
+            args["usr"] = Web3.to_checksum_address(args["usr"])
+        if "eta" in args:
+            args["eta_iso"] = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(args["eta"])))
+        addr = Web3.to_checksum_address(lg["address"])
+        return Alert(
+            severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
+            label=self.labels.get(addr, addr), event=spec.name, source=spec.source,
+            message=spec.describe.format(**args), block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
 
     def _decode_nft(self, lg) -> Alert | None:
         coll_addr = Web3.to_checksum_address(lg["address"])

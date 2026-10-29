@@ -82,3 +82,12 @@ def test_jsonl_sink_appends_one_line_per_alert(tmp_path):
     rows = [json.loads(l) for l in path.read_text().splitlines()]
     assert [r["event"] for r in rows] == ["CallScheduled", "AddedOwner"]
     assert rows[0]["severity"] == "high" and rows[0]["block"] == 1 and rows[0]["ts"].endswith("Z")
+
+
+def test_jsonl_ts_is_the_block_time_when_known(tmp_path):
+    import json
+    path = tmp_path / "alerts.jsonl"
+    d = Dispatcher(Alerts(jsonl_path=str(path)))
+    d.send(Alert("high", "ethereum", "0xabc", "Pause", "SpellExecuted", "DSPause", "spell executed", 7, "0xtx",
+                 block_time="2026-10-14T13:13:35Z"))
+    assert json.loads(path.read_text())["ts"] == "2026-10-14T13:13:35Z"

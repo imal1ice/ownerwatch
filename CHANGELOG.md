@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.8.0 - 2026-10-29
+- Governance systems that ownerwatch could not read before, each checked against 90 days of mainnet logs (tests/fixtures/governance_logs.json):
+  - Sky: DSPause spells as DSNote call logs (plot, exec, drop, setDelay, read from the calldata the note carries), LogSetOwner, LogSetAuthority, DSChief Lift.
+  - Lido: Dual Governance and the Emergency Protected Timelock (proposals submitted, scheduled, executed; proposers, committees, delays, emergency mode, state changes).
+  - Rocket Pool: DAO proposals added, executed, destroyed; contract upgrades pending and applied; RocketStorage guardian.
+  - CoW Protocol solver allow-list, Gearbox ACL admins, 0x Settler deployer deployments and authorizations.
+- A topic can now have more than one layout: the Emergency Protected Timelock's `ProposalExecuted(uint256 indexed)` shares its topic with Governor's unindexed one, and was silently dropped before.
+- Alerts carry the block's own time (`block_time`); the JSONL `ts` uses it, so events are dated when they happened, not when a poll or backfill saw them.
+
 ## 0.7.6 - 2026-10-21
 - probe: proxies whose upgrade admin is stored in their factory (Solady `ERC1967Factory` and forks, empty ERC-1967 admin slot) now resolve to the real admin via `adminOf(proxy)`, found from addresses embedded in the proxy bytecode plus Solady's canonical factory. Before, such proxies were reported as controlled by `owner()`, which overstated upgrade risk.
 - probe: recognises Solady `Timelock` (`minDelay()`) and custom Ownable timelocks (`delay()` + `owner()`).

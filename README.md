@@ -21,6 +21,12 @@ Every address in your config gets the full catalog:
 | Governor (OpenZeppelin and GovernorBravo) | ProposalCreated, ProposalQueued, ProposalExecuted, ProposalCanceled, VotingDelaySet, VotingPeriodSet, ProposalThresholdSet, QuorumNumeratorUpdated, TimelockChange, NewImplementation | medium to critical |
 | Aave Governance V3 PayloadsController | PayloadCreated (with decoded actions), PayloadQueued, PayloadExecuted, PayloadCancelled, ExecutorSet, GuardianUpdated | medium to critical |
 | Aragon OS (Lido and others) | SetApp, SetPermission, ChangePermissionManager, StartVote, ExecuteVote | medium to critical |
+| Sky (MakerDAO) governance | DSPause spells plotted, executed and dropped, pause delay, owner and authority; DSChief Lift (new hat) | medium to critical |
+| Lido Dual Governance and Emergency Protected Timelock | proposals submitted, scheduled and executed, Dual Governance state changes, proposers, committees, delays, emergency mode | medium to critical |
+| Rocket Pool DAOs | proposals added, executed and destroyed (protocol DAO, oDAO, security council), contract upgrades pending and applied, RocketStorage guardian | medium to critical |
+| CoW Protocol allow-list | SolverAdded, SolverRemoved, ManagerChanged, proxy upgrades | high / critical |
+| Gearbox ACL | pausable and unpausable admins added or removed | high |
+| 0x Settler deployer | Deployed, Removed, RemovedAll, Authorized | high / critical |
 | Safe | AddedOwner, RemovedOwner, ChangedThreshold, EnabledModule, DisabledModule, ChangedGuard, ChangedFallbackHandler, ExecutionFromModuleSuccess, ExecutionSuccess, ExecutionFailure | info to critical |
 | ERC-20 treasuries | Transfer out above a threshold you set | high |
 | NFT treasuries | Any ERC-721 or ERC-1155 transfer out | high |

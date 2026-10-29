@@ -7,7 +7,7 @@ import sys
 from . import __version__
 from .alerts import Dispatcher
 from .config import load_all
-from .events import CATALOG
+from .events import CATALOG, NOTE_SPECS, VARIANTS
 from .watcher import Watcher
 
 
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
 
     if a.cmd == "events":
-        for s in CATALOG:
+        for s in [*CATALOG, *VARIANTS, *NOTE_SPECS.values()]:
             print(f"{s.severity:8} {s.source:18} {s.signature}")
         return 0
 
