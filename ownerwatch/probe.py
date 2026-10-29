@@ -207,12 +207,31 @@ class Prober:
             if n.kind == "timelock" and n.open_executor is None:
                 n.open_executor = False
             self._refine_notes()
-            for who in n.roles.get("DEFAULT_ADMIN_ROLE", []):
-                c = self.seen.get(who)
-                if c and c.kind == "eoa":
-                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
-                elif c and c.kind == "safe" and c.safe_threshold == 1:
-                    n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
+            # Powerful roles held outside any timelock: the "multisig, but no clock" case. A pause role on a Safe is
+            # left out on purpose: pausing without delay is what a guardian is for.
+            upgrade = self.seen.get(n.proxy_admin) if n.proxy_admin else None
+            upgrade_delay = None
+            if upgrade is not None and self._timelocked(upgrade):
+                t = upgrade if upgrade.kind in ("timelock", "legacy-timelock") else self.seen.get(upgrade.owner or "")
+                upgrade_delay = t.delay if t is not None and t.delay else None
+            for role in ("DEFAULT_ADMIN_ROLE", "MINTER_ROLE", "UPGRADER_ROLE"):
+                for who in n.roles.get(role, []):
+                    c = self.seen.get(who)
+                    if c is None:
+                        continue
+                    if c.kind == "eoa":
+                        note = f"{role} held by EOA {who}"
+                    elif c.kind == "safe" and c.safe_threshold == 1:
+                        note = f"{role} held by 1-of-N Safe {who}"
+                    elif c.kind == "safe" and not self._timelocked(c):
+                        note = (f"{role} held by {c.safe_threshold}-of-{len(c.safe_owners)} Safe {who} with no timelock: "
+                                "it takes effect immediately")
+                        if upgrade_delay:
+                            note += f", while upgrades wait {upgrade_delay // 3600}h"
+                    else:
+                        continue
+                    if note not in n.notes:
+                        n.notes.append(note)
 
     def _refine_notes(self) -> None:
         """Once role holders are known, drop "no recognised timelock" notes whose controller turns out to act

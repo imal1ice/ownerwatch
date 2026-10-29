@@ -239,3 +239,11 @@ contract WardsLike {
     mapping(address => uint256) public wards;
     function rely(address a) external { wards[a] = 1; }
 }
+// A 2-of-3 Safe as the probe sees it: getThreshold() and getOwners().
+contract MultisigLike {
+    function getThreshold() external pure returns (uint256) { return 2; }
+    function getOwners() external pure returns (address[] memory o) {
+        o = new address[](3);
+        o[0] = address(0x1001); o[1] = address(0x1002); o[2] = address(0x1003);
+    }
+}

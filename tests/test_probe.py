@@ -247,3 +247,23 @@ def test_governance_patterns_of_large_protocols(anvil, artifacts):  # noqa: F811
     assert p5.seen[wards.address].wards == [SKY_PAUSE_PROXY]
     assert p5.seen[pause.address].kind == "timelock" and p5.seen[pause.address].delay == 172800
     assert not any("no recognised timelock" in x for x in o.notes), o.notes
+
+
+def test_multisig_role_admin_outside_the_timelock_is_a_finding(anvil, artifacts):  # noqa: F811
+    """A Safe holding DEFAULT_ADMIN_ROLE directly acts with no delay even when upgrades are timelocked: the
+    "multisig, but no clock" case. A pause role on the same Safe is not a finding."""
+    from web3 import Web3
+    w3 = anvil
+    acct = w3.eth.accounts[0]
+    safe = _deploy(w3, *artifacts["MultisigLike"])
+    box = _deploy(w3, *artifacts["RoleLog"])
+    for tx in (box.functions.grantRole(b"\x00" * 32, safe.address), box.functions.grantRole(Web3.keccak(text="PAUSER_ROLE"), safe.address)):
+        w3.eth.wait_for_transaction_receipt(tx.transact({"from": acct}))
+    p = Prober(w3)
+    n = p.probe(box.address)
+    p.probe(safe.address)
+    p.check_roles(list(p.seen.keys()))
+    assert p.seen[safe.address].kind == "safe"
+    assert any(f"DEFAULT_ADMIN_ROLE held by 2-of-3 Safe {safe.address} with no timelock" in x for x in n.notes), n.notes
+    assert not any(x.startswith("PAUSER_ROLE held by") for x in n.notes)
+    assert "No single-key or zero-delay" not in markdown_report(p, "T", "anvil", [n])
