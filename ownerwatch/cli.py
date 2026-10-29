@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
+from pathlib import Path
 
 from . import __version__
 from .alerts import Dispatcher
@@ -49,9 +51,32 @@ def main(argv: list[str] | None = None) -> int:
                     help="with --roles-from-logs: first block to scan (default: creation block from Sourcify or a code search)")
     pr.add_argument("--logs-rpc", default=None,
                     help="with --roles-from-logs: RPC used only for eth_getLogs, e.g. https://mainnet.gateway.tenderly.co (full history, large blocks per call)")
+    ds = sub.add_parser("disclosure", help="ERC-8241 control disclosures: draft one from chain state, or check one against it")
+    dsub = ds.add_subparsers(dest="dcmd", required=True)
+    dd = dsub.add_parser("draft", help="write a starting ERC-8241 disclosure (JSON) for these addresses")
+    dd.add_argument("addresses", nargs="+")
+    dd.add_argument("--rpc", required=True)
+    dd.add_argument("--name", default="Protocol")
+    dd.add_argument("--block", type=int, default=None, help="read at this block (default: latest)")
+    dc = dsub.add_parser("check", help="check an ERC-8241 disclosure (JSON) against chain state; exit 1 on any mismatch or undisclosed power")
+    dc.add_argument("file")
+    dc.add_argument("--rpc", required=True)
+    dc.add_argument("--block", type=int, default=None, help="pin every read to this block (default: latest)")
+    dc.add_argument("--json", action="store_true", help="print the full report as JSON")
     a = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
+
+    if a.cmd == "disclosure":
+        from web3 import Web3
+        from .disclosure import Checker, draft, render
+        w3 = Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30}))
+        if a.dcmd == "draft":
+            print(json.dumps(draft(w3, a.addresses, a.name, a.block), indent=2))
+            return 0
+        report = Checker(w3, a.block).check(json.loads(Path(a.file).read_text()))
+        print(json.dumps(report, indent=2) if a.json else render(report))
+        return 1 if report["summary"]["mismatch"] or report["summary"]["undisclosed"] else 0
 
     if a.cmd == "events":
         for s in [*CATALOG, *VARIANTS, *NOTE_SPECS.values()]:

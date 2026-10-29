@@ -38,6 +38,8 @@ Timelock and Safe-queue alerts show the call being made: full function and argum
 
 Run `ownerwatch events` to print the catalog.
 
+**ERC-8241 disclosures.** `ownerwatch disclosure draft` writes an [ERC-8241](https://ethereum-magicians.org/t/erc-8241-protocol-control-disclosure/28343) control disclosure from chain state, and `ownerwatch disclosure check` verifies one at a pinned block, including powers observed on-chain that the disclosure leaves out. See [docs/erc-8241.md](docs/erc-8241.md).
+
 ## Quick start
 
 ```bash

@@ -1,0 +1,139 @@
+{
+  "standard": "ERC-8241",
+  "standardVersion": "core-draft",
+  "protocol": {
+    "name": "Aave V3 (Ethereum core)",
+    "chainId": 1,
+    "manifestHash": "0x108aea6f5f87cf036855423561a1291582b1cb62416840ce419f5e8914993ede"
+  },
+  "nonce": 1,
+  "observedAtBlock": 26297550,
+  "scope": {
+    "components": [
+      "component-87870b",
+      "component-2f39d2",
+      "component-c2aacf"
+    ],
+    "assets": [],
+    "exclusions": [],
+    "assumptions": []
+  },
+  "nodes": [
+    {
+      "nodeId": "contract-87870b",
+      "type": "CONTRACT",
+      "address": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+    },
+    {
+      "nodeId": "contract-2f39d2",
+      "type": "CONTRACT",
+      "address": "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e"
+    },
+    {
+      "nodeId": "contract-5300a1",
+      "type": "CONTRACT",
+      "address": "0x5300A1a15135EA4dc7aD5a167152C01EFc9b192A"
+    },
+    {
+      "nodeId": "contract-c2aacf",
+      "type": "CONTRACT",
+      "address": "0xc2aaCf6553D20d1e9d78E365AAba8032af9c85b0"
+    },
+    {
+      "nodeId": "timelock-dabad8",
+      "type": "TIMELOCK",
+      "address": "0xdAbad81aF85554E9ae636395611C58F7eC1aAEc5",
+      "delay": 86400
+    },
+    {
+      "nodeId": "contract-d3cf97",
+      "type": "CONTRACT",
+      "address": "0xD3cF979e676265e4f6379749DECe4708B9A22476"
+    }
+  ],
+  "components": [
+    {
+      "componentId": "component-87870b",
+      "address": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+      "nodeId": "contract-87870b",
+      "type": "contract",
+      "upgradeable": true,
+      "implementation": "0x728a138A4823392C2EFA55e028d434F526fE03CF",
+      "adminNodeId": "contract-2f39d2"
+    },
+    {
+      "componentId": "component-2f39d2",
+      "address": "0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e",
+      "nodeId": "contract-2f39d2",
+      "type": "contract",
+      "upgradeable": false
+    },
+    {
+      "componentId": "component-c2aacf",
+      "address": "0xc2aaCf6553D20d1e9d78E365AAba8032af9c85b0",
+      "nodeId": "contract-c2aacf",
+      "type": "contract",
+      "upgradeable": false
+    }
+  ],
+  "powers": [
+    {
+      "powerId": "upgrade-component-87870b",
+      "kind": "UPGRADE",
+      "enabled": true,
+      "target": "component-87870b",
+      "controllerNodeId": "contract-2f39d2"
+    },
+    {
+      "powerId": "ownership-component-2f39d2",
+      "kind": "OWNERSHIP",
+      "enabled": true,
+      "target": "component-2f39d2",
+      "controllerNodeId": "contract-5300a1"
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "upgrade_admin_of-contract-2f39d2-contract-87870b",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "contract-2f39d2",
+      "to": "contract-87870b",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-2f39d2",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-2f39d2",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-timelock-dabad8-contract-5300a1",
+      "kind": "OWNER_OF",
+      "from": "timelock-dabad8",
+      "to": "contract-5300a1",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-timelock-dabad8",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "timelock-dabad8",
+      "direct": true
+    },
+    {
+      "edgeId": "upgrade_admin_of-contract-d3cf97-timelock-dabad8",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "contract-d3cf97",
+      "to": "timelock-dabad8",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-d3cf97",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-d3cf97",
+      "direct": true
+    }
+  ]
+}

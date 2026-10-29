@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-## 0.8.1 - 2026-10-29
+## 0.9.0 - 2026-10-29
+- `ownerwatch disclosure draft|check`: ERC-8241 (Protocol Control Disclosure) support. `draft` writes a disclosure from chain state (components, nodes, powers, and the controller chain as edges); `check` verifies one at a pinned block, record by record (ok, mismatch, unverifiable), and lists observed control over the declared components that no power declares. Exit code 1 on any mismatch or undisclosed power. See docs/erc-8241.md; Aave V3 examples in examples/erc-8241/.
 - probe: Aave V3 is read correctly. Immutable-admin proxies (the Pool, answering `admin()` only to their admin) resolve to their admin, found by asking as each address embedded in the bytecode. The Governance V3 PayloadsController counts as a timelock, with the shortest delay in its executor settings. A contract counts as timelocked when every controller it has leads to a timelock within two hops, so the Executor and the PoolAddressesProvider no longer get a false "no recognised timelock" finding.
 - Tests: Aave-pattern fixtures (immutable-admin proxy, provider, executor, PayloadsController); the full suite, including the anvil tests, passes locally.
 
