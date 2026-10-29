@@ -106,7 +106,7 @@ ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --
 
 ## Hosted tier
 
-Don't want to run it? I run it for you, per chain, paid in USDC on-chain through `contracts/src/Subscriptions.sol`: approve, call `subscribe(periods, chains, maxCost, configRef)`, send me the config. No invoices, no accounts, no KYC either way. Details in [docs/hosted.md](docs/hosted.md). Deployment address will be listed here once live; until then open an issue. The operator side is `ownerwatch hosted --rpc ... --subscriptions 0x... --configs configs/`: it starts a watcher for every address with an active subscription and stops it when the subscription lapses.
+ownerwatch includes what it takes to run it as a paid service for others: a subscription contract, `contracts/src/Subscriptions.sol` (approve USDC, call `subscribe(periods, chains, maxCost, configRef)`), and an operator runner, `ownerwatch hosted --rpc ... --subscriptions 0x... --configs configs/`, which starts a watcher for every address with an active subscription and stops it when the subscription lapses. Details in [docs/hosted.md](docs/hosted.md). No deployment is operated from this repository.
 
 ```bash
 cd contracts && forge install foundry-rs/forge-std --no-git && forge test
@@ -133,11 +133,8 @@ python3 -m venv .venv && .venv/bin/pip install -e . pytest
 .venv/bin/pytest        # end-to-end test against a local anvil node; needs foundry
 ```
 
-## Services
+## Work with me
 
-ownerwatch is free and self-hosted. If you would rather have someone do the work:
+ownerwatch is free and self-hosted. If you would rather have someone do the work, I do admin-surface reviews (every owner, proxy admin, role holder and Safe signer in a deployment, replayed from logs, with findings, fixes and a ready-to-run config), monitoring setups, and ERC-8241 disclosures drafted from chain state and checked in CI.
 
-- **Admin-surface review**: every owner, proxy admin, role holder and Safe signer in your deployment, replayed from logs, with a written report and a ready-to-run ownerwatch config. Flat $400 in USDC, delivered within 48 hours.
-- **Hosted monitoring**: I run ownerwatch for you on a dedicated server with a heartbeat check, and alert your Discord, Slack or Telegram. $300 per month per chain, paid in USDC on-chain. Offered to teams already running the self-hosted version.
-
-Contact: imal1ice@proton.me. Wallet for payments: `0x874D018623EeBb398B898AC7AB0c97506244141B`.
+Write to imal1ice@proton.me. Before anything is paid, I share the terms, including where I am based, so you can decide whether you are able to work with me.
