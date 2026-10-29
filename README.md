@@ -121,7 +121,6 @@ cd contracts && forge install foundry-rs/forge-std --no-git && forge test
 ownerwatch is free and MIT licensed. If it saves you a 3am incident, fund the work:
 
 - Drips: https://www.drips.network/app/projects/github/imal1ice/ownerwatch
-- Giveth: https://giveth.io/project/ownerwatch
 - Direct: `0x874D018623EeBb398B898AC7AB0c97506244141B` (Ethereum and all major L2s)
 
 Need it deployed, extended or integrated with your alerting stack? Open an issue or reach out on GitHub.
