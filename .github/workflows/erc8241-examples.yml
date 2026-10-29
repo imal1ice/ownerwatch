@@ -1,0 +1,62 @@
+name: erc8241-examples
+# Regenerates examples/erc-8241 (Aave V3 Ethereum core) from chain state with the code on this branch, and checks
+# each example. Manual: the role replay needs a full-history log RPC, which a runner reaches reliably.
+on:
+  workflow_dispatch:
+    inputs:
+      block:
+        description: "Block to pin (empty: latest)"
+        required: false
+        default: ""
+jobs:
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q -e .
+      - name: Draft and derive the examples
+        env:
+          RPC: https://mainnet.gateway.tenderly.co
+        run: |
+          set -euo pipefail
+          block=()
+          if [ -n "${{ inputs.block }}" ]; then block=(--block "${{ inputs.block }}"); fi
+          ownerwatch disclosure draft 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2 0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e \
+            0xc2aaCf6553D20d1e9d78E365AAba8032af9c85b0 --rpc "$RPC" --name "Aave V3 (Ethereum core)" "${block[@]}" \
+            > examples/erc-8241/aave-v3-drafted.json
+          python - <<'EOF'
+          import copy, json
+          from ownerwatch.disclosure import manifest_hash
+          d = json.load(open("examples/erc-8241/aave-v3-drafted.json"))
+          stale = copy.deepcopy(d)              # a 2-day delay where the controller has 1 day, and a "non-upgradeable" Pool
+          for n in stale["nodes"]:
+              if n["type"] == "TIMELOCK":
+                  n["delay"] = 172800
+          for c in stale["components"]:
+              if c["address"].lower().startswith("0x87870b"):
+                  c["upgradeable"] = False
+          omission = copy.deepcopy(d)           # the ACLManager admin and emergency admin left out
+          omission["powers"] = [p for p in omission["powers"]
+                                if not (p["kind"] == "ROLE" and p.get("role") in ("DEFAULT_ADMIN_ROLE", "EMERGENCY_ADMIN_ROLE"))]
+          for x, name in ((stale, "stale"), (omission, "omission")):
+              x["protocol"]["manifestHash"] = manifest_hash(x)
+              json.dump(x, open(f"examples/erc-8241/aave-v3-{name}.json", "w"), indent=2)
+          EOF
+      - name: Check each example at the drafted block
+        env:
+          RPC: https://mainnet.gateway.tenderly.co
+        run: |
+          set -uo pipefail
+          b=$(python -c 'import json;print(json.load(open("examples/erc-8241/aave-v3-drafted.json"))["observedAtBlock"])')
+          for f in drafted stale omission; do
+            ownerwatch disclosure check "examples/erc-8241/aave-v3-$f.json" --rpc "$RPC" --block "$b" > "examples/erc-8241/aave-v3-$f.check.txt"
+            echo "$f exit=$?"
+            sed -n 1,3p "examples/erc-8241/aave-v3-$f.check.txt"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: erc8241-examples
+          path: examples/erc-8241/
