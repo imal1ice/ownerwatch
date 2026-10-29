@@ -1,9 +1,9 @@
 # Changelog
 
 ## Unreleased
-- probe: `--role-candidates` tests extra addresses (a protocol's Safes and keys from its docs or other chains) for AccessControl roles without probing them as targets; a role holder found by enumeration or by a candidate is classified before its finding is written.
 
 ## 0.9.2 - 2026-10-29
+- probe: `--role-candidates` tests extra addresses (a protocol's Safes and keys from its docs or other chains) for AccessControl roles without probing them as targets; a role holder found by enumeration or by a candidate is classified before its finding is written.
 - README: services without prices or a payment wallet (terms are shared before anything is paid); the hosted tier is described as operator-neutral software; dead Giveth link removed.
 - probe: DEFAULT_ADMIN_ROLE, MINTER_ROLE and UPGRADER_ROLE held by a multisig that acts outside any timelock are now findings ("it takes effect immediately, while upgrades wait 48h"), as they already were for single keys. Before, a deployment whose upgrades were timelocked but whose roles sat on a bare Safe was summarised as having no zero-delay paths. Pause roles on a Safe stay out on purpose.
 
