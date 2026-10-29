@@ -4,10 +4,10 @@
   "protocol": {
     "name": "Aave V3 (Ethereum core)",
     "chainId": 1,
-    "manifestHash": "0xf29248832f0fb1eea14f24cbe817f5dfe0f812ce53ef9da50a6163e89fdb2b94"
+    "manifestHash": "0x05d309c32b35e5bcb9af50cad4d673bc95888343c74a1cdbe484a9a3092118c3"
   },
   "nonce": 1,
-  "observedAtBlock": 26297550,
+  "observedAtBlock": 26298094,
   "scope": {
     "components": [
       "component-87870b",
@@ -40,15 +40,175 @@
       "address": "0xc2aaCf6553D20d1e9d78E365AAba8032af9c85b0"
     },
     {
+      "nodeId": "multisig-2cfe3e",
+      "type": "MULTISIG",
+      "address": "0x2CFe3ec4d5a6811f4B8067F0DE7e47DfA938Aa30",
+      "threshold": 4,
+      "controllerCount": 7
+    },
+    {
+      "nodeId": "contract-0274a7",
+      "type": "CONTRACT",
+      "address": "0x0274a704a6D9129F90A62dDC6f6024b33EcDad36"
+    },
+    {
+      "nodeId": "contract-352423",
+      "type": "CONTRACT",
+      "address": "0x352423e2fA5D5c99343d371C9e3bC56C87723Cc7"
+    },
+    {
+      "nodeId": "contract-3a657e",
+      "type": "CONTRACT",
+      "address": "0x3a657Ec8a755d2E43DDbfDeaDc15899EDaf8dcf8"
+    },
+    {
+      "nodeId": "contract-45c005",
+      "type": "CONTRACT",
+      "address": "0x45c00508C14601fd1C1e296eB3C0e3eEEdCa45D0"
+    },
+    {
+      "nodeId": "contract-49d940",
+      "type": "CONTRACT",
+      "address": "0x49d9409111a6363d82C4371fFa43fAEA660C917B"
+    },
+    {
+      "nodeId": "contract-6e8ac9",
+      "type": "CONTRACT",
+      "address": "0x6e8ac99B2ec2e08600c7d0Aab970f31e9b11957a"
+    },
+    {
+      "nodeId": "contract-72915d",
+      "type": "CONTRACT",
+      "address": "0x72915D41982DfCAf30b871290618E59C45Edba7F"
+    },
+    {
+      "nodeId": "contract-85105b",
+      "type": "CONTRACT",
+      "address": "0x85105b7E11c442Ca6fF6b4d90d7a439f68376Ac4"
+    },
+    {
+      "nodeId": "contract-8761e0",
+      "type": "CONTRACT",
+      "address": "0x8761e0370f94f68Db8EaA731f4fC581f6AD0Bd68"
+    },
+    {
+      "nodeId": "contract-ab5155",
+      "type": "CONTRACT",
+      "address": "0xab515542d621574f9b5212d50593cD0C07e641bD"
+    },
+    {
+      "nodeId": "contract-b5b293",
+      "type": "CONTRACT",
+      "address": "0xb5b29320d2Dde5BA5BAFA1EbcD270052070483ec"
+    },
+    {
+      "nodeId": "contract-d9d8e6",
+      "type": "CONTRACT",
+      "address": "0xd9D8e68717Ce24CCbf162868aaad7E38d81b05d1"
+    },
+    {
+      "nodeId": "contract-decc46",
+      "type": "CONTRACT",
+      "address": "0xdeCC46a4b09162F5369c5C80383AAa9159bCf192"
+    },
+    {
+      "nodeId": "contract-872fbc",
+      "type": "CONTRACT",
+      "address": "0x872fBcb1B582e8Cd0D0DD4327fBFa0B4C2730995"
+    },
+    {
+      "nodeId": "contract-b74895",
+      "type": "CONTRACT",
+      "address": "0xB748952c7BC638F31775245964707Bcc5DDFabFC"
+    },
+    {
+      "nodeId": "contract-13a9cc",
+      "type": "CONTRACT",
+      "address": "0x13a9CC64344b02bACC5AD9Cf38B5711F1B9ec3d4"
+    },
+    {
+      "nodeId": "contract-529e23",
+      "type": "CONTRACT",
+      "address": "0x529e2374afB38AC465D71979E7540ad93C05F6c5"
+    },
+    {
+      "nodeId": "contract-551322",
+      "type": "CONTRACT",
+      "address": "0x5513224daaEABCa31af5280727878d52097afA05"
+    },
+    {
+      "nodeId": "contract-6f48d9",
+      "type": "CONTRACT",
+      "address": "0x6f48d9Cdb8EE6E17c96B2d8Aec128af426A295c1"
+    },
+    {
+      "nodeId": "contract-98217a",
+      "type": "CONTRACT",
+      "address": "0x98217A06721Ebf727f2C8d9aD7718ec28b7aAe34"
+    },
+    {
+      "nodeId": "contract-be2840",
+      "type": "CONTRACT",
+      "address": "0xbe2840440d4f77CD98CEC2de09913e6851907744"
+    },
+    {
       "nodeId": "timelock-dabad8",
       "type": "TIMELOCK",
       "address": "0xdAbad81aF85554E9ae636395611C58F7eC1aAEc5",
       "delay": 86400
     },
     {
+      "nodeId": "contract-69592e",
+      "type": "CONTRACT",
+      "address": "0x69592e6f9d21989a043646fE8225da2600e5A0f7"
+    },
+    {
+      "nodeId": "contract-4f6f97",
+      "type": "CONTRACT",
+      "address": "0x4F6F977aCDD1177DCD81aB83074855EcB9C2D49e"
+    },
+    {
+      "nodeId": "eoa-12a59e",
+      "type": "EOA",
+      "address": "0x12A59eab07b1Cdd176dad9E4cBbe7Dd973C95d0E"
+    },
+    {
+      "nodeId": "eoa-1f43e1",
+      "type": "EOA",
+      "address": "0x1F43e11dfC79139a716b290b92237Fd570C540c9"
+    },
+    {
+      "nodeId": "multisig-a043b0",
+      "type": "MULTISIG",
+      "address": "0xA043B0EaD753d15fe6830d7be57f24432Dd773d1",
+      "threshold": 1,
+      "controllerCount": 2
+    },
+    {
+      "nodeId": "timelock-ee56e2",
+      "type": "TIMELOCK",
+      "address": "0xEE56e2B3D491590B5b31738cC34d5232F378a8D5",
+      "delay": 86400
+    },
+    {
+      "nodeId": "eoa-246e20",
+      "type": "EOA",
+      "address": "0x246E20bF778b3e16cB71eca535f40f8C4E6c4185"
+    },
+    {
+      "nodeId": "contract-40e424",
+      "type": "CONTRACT",
+      "address": "0x40E4243C9471bb0a84Ba0968bccc9b8975E5Ee62"
+    },
+    {
       "nodeId": "contract-d3cf97",
       "type": "CONTRACT",
       "address": "0xD3cF979e676265e4f6379749DECe4708B9A22476"
+    },
+    {
+      "nodeId": "eoa-c7810a",
+      "type": "EOA",
+      "address": "0xC7810aA3b0c6A2778EEcC114B93d59B2E9Da9E05"
     }
   ],
   "components": [
@@ -98,6 +258,192 @@
       "enabled": true,
       "target": "component-c2aacf",
       "controllerNodeId": "contract-5300a1"
+    },
+    {
+      "powerId": "pool_admin_role-component-c2aacf-5300a1",
+      "kind": "ROLE",
+      "role": "POOL_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-5300a1"
+    },
+    {
+      "powerId": "emergency_admin_role-component-c2aacf-2cfe3e",
+      "kind": "ROLE",
+      "role": "EMERGENCY_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "multisig-2cfe3e",
+      "threshold": 4,
+      "controllerCount": 7
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-0274a7",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-0274a7"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-352423",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-352423"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-3a657e",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-3a657e"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-45c005",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-45c005"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-49d940",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-49d940"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-6e8ac9",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-6e8ac9"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-72915d",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-72915d"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-85105b",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-85105b"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-8761e0",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-8761e0"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-ab5155",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-ab5155"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-b5b293",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-b5b293"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-d9d8e6",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-d9d8e6"
+    },
+    {
+      "powerId": "flash_borrower_role-component-c2aacf-decc46",
+      "kind": "ROLE",
+      "role": "FLASH_BORROWER_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-decc46"
+    },
+    {
+      "powerId": "0xd1d2cf869016112a9af110-component-c2aacf-872fbc",
+      "kind": "ROLE",
+      "role": "0xd1d2cf869016112a9af1107bcf43c3759daf22cf734aad47d0c9c726e33bc782",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-872fbc"
+    },
+    {
+      "powerId": "0xd1d2cf869016112a9af110-component-c2aacf-b74895",
+      "kind": "ROLE",
+      "role": "0xd1d2cf869016112a9af1107bcf43c3759daf22cf734aad47d0c9c726e33bc782",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-b74895"
+    },
+    {
+      "powerId": "risk_admin_role-component-c2aacf-13a9cc",
+      "kind": "ROLE",
+      "role": "RISK_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-13a9cc"
+    },
+    {
+      "powerId": "risk_admin_role-component-c2aacf-529e23",
+      "kind": "ROLE",
+      "role": "RISK_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-529e23"
+    },
+    {
+      "powerId": "risk_admin_role-component-c2aacf-551322",
+      "kind": "ROLE",
+      "role": "RISK_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-551322"
+    },
+    {
+      "powerId": "risk_admin_role-component-c2aacf-6f48d9",
+      "kind": "ROLE",
+      "role": "RISK_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-6f48d9"
+    },
+    {
+      "powerId": "risk_admin_role-component-c2aacf-98217a",
+      "kind": "ROLE",
+      "role": "RISK_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-98217a"
+    },
+    {
+      "powerId": "risk_admin_role-component-c2aacf-be2840",
+      "kind": "ROLE",
+      "role": "RISK_ADMIN_ROLE",
+      "enabled": true,
+      "target": "component-c2aacf",
+      "controllerNodeId": "contract-be2840"
     }
   ],
   "edges": [
@@ -123,6 +469,104 @@
       "direct": true
     },
     {
+      "edgeId": "owner_of-contract-69592e-contract-0274a7",
+      "kind": "OWNER_OF",
+      "from": "contract-69592e",
+      "to": "contract-0274a7",
+      "direct": true
+    },
+    {
+      "edgeId": "upgrade_admin_of-contract-4f6f97-contract-352423",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "contract-4f6f97",
+      "to": "contract-352423",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-eoa-12a59e-contract-49d940",
+      "kind": "OWNER_OF",
+      "from": "eoa-12a59e",
+      "to": "contract-49d940",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-eoa-1f43e1-contract-85105b",
+      "kind": "OWNER_OF",
+      "from": "eoa-1f43e1",
+      "to": "contract-85105b",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-8761e0",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-8761e0",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-69592e-contract-b5b293",
+      "kind": "OWNER_OF",
+      "from": "contract-69592e",
+      "to": "contract-b5b293",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-multisig-a043b0-contract-decc46",
+      "kind": "OWNER_OF",
+      "from": "multisig-a043b0",
+      "to": "contract-decc46",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-timelock-ee56e2-contract-872fbc",
+      "kind": "OWNER_OF",
+      "from": "timelock-ee56e2",
+      "to": "contract-872fbc",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-eoa-246e20-contract-b74895",
+      "kind": "OWNER_OF",
+      "from": "eoa-246e20",
+      "to": "contract-b74895",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-13a9cc",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-13a9cc",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-551322",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-551322",
+      "direct": true
+    },
+    {
+      "edgeId": "upgrade_admin_of-contract-40e424-contract-551322",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "contract-40e424",
+      "to": "contract-551322",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-6f48d9",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-6f48d9",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-98217a",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-98217a",
+      "direct": true
+    },
+    {
       "edgeId": "owner_of-contract-5300a1-timelock-dabad8",
       "kind": "OWNER_OF",
       "from": "contract-5300a1",
@@ -134,6 +578,20 @@
       "kind": "UPGRADE_ADMIN_OF",
       "from": "contract-d3cf97",
       "to": "timelock-dabad8",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-eoa-c7810a-contract-4f6f97",
+      "kind": "OWNER_OF",
+      "from": "eoa-c7810a",
+      "to": "contract-4f6f97",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-contract-5300a1-contract-40e424",
+      "kind": "OWNER_OF",
+      "from": "contract-5300a1",
+      "to": "contract-40e424",
       "direct": true
     },
     {
