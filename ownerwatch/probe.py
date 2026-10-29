@@ -216,9 +216,7 @@ class Prober:
                 upgrade_delay = t.delay if t is not None and t.delay else None
             for role in ("DEFAULT_ADMIN_ROLE", "MINTER_ROLE", "UPGRADER_ROLE"):
                 for who in n.roles.get(role, []):
-                    c = self.seen.get(who)
-                    if c is None:
-                        continue
+                    c = self.seen.get(who) or self.probe(who, depth=2)   # a holder found by enumeration or a candidate
                     if c.kind == "eoa":
                         note = f"{role} held by EOA {who}"
                     elif c.kind == "safe" and c.safe_threshold == 1:

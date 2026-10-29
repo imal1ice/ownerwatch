@@ -49,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="replay RoleGranted/RoleRevoked logs to list every current role holder (needs an RPC with log history)")
     pr.add_argument("--from-block", type=int, default=None,
                     help="with --roles-from-logs: first block to scan (default: creation block from Sourcify or a code search)")
+    pr.add_argument("--role-candidates", default="",
+                    help="comma-separated addresses to test for AccessControl roles without probing them as targets "
+                         "(the protocol's Safes and keys from docs or other chains)")
     pr.add_argument("--logs-rpc", default=None,
                     help="with --roles-from-logs: RPC used only for eth_getLogs, e.g. https://mainnet.gateway.tenderly.co (full history, large blocks per call)")
     ds = sub.add_parser("disclosure", help="ERC-8241 control disclosures: draft one from chain state, or check one against it")
@@ -132,7 +135,8 @@ def main(argv: list[str] | None = None) -> int:
             p.error("probe needs --rpc and at least one address, or --config")
         prober = Prober(Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30})))
         roots = [prober.probe(x) for x in a.addresses]
-        prober.check_roles(list(prober.seen.keys()))
+        extra = [Web3.to_checksum_address(x) for x in a.role_candidates.replace(" ", ",").split(",") if x]
+        prober.check_roles(list(dict.fromkeys([*prober.seen.keys(), *extra])))
         if a.roles_from_logs:
             logs_w3 = Web3(Web3.HTTPProvider(a.logs_rpc, request_kwargs={"timeout": 60})) if a.logs_rpc else None
             for x in a.addresses:

@@ -267,3 +267,22 @@ def test_multisig_role_admin_outside_the_timelock_is_a_finding(anvil, artifacts)
     assert any(f"DEFAULT_ADMIN_ROLE held by 2-of-3 Safe {safe.address} with no timelock" in x for x in n.notes), n.notes
     assert not any(x.startswith("PAUSER_ROLE held by") for x in n.notes)
     assert "No single-key or zero-delay" not in markdown_report(p, "T", "anvil", [n])
+
+
+def test_role_candidates_find_holders_without_becoming_targets(anvil, artifacts, capsys):  # noqa: F811
+    """--role-candidates tests extra addresses for roles; a holder found that way is classified (here a Safe) and
+    the finding appears, but the candidate is not reported as a probed target unless it holds a role."""
+    from ownerwatch.cli import main
+    w3 = anvil
+    acct = w3.eth.accounts[0]
+    safe = _deploy(w3, *artifacts["MultisigLike"])
+    unrelated = _deploy(w3, *artifacts["Admin"])
+    box = _deploy(w3, *artifacts["RoleLog"])
+    w3.eth.wait_for_transaction_receipt(box.functions.grantRole(b"\x00" * 32, safe.address).transact({"from": acct}))
+    rpc = w3.provider.endpoint_uri
+    assert main(["probe", "--rpc", rpc, "--markdown", box.address]) == 0
+    assert "2-of-3 Safe" not in capsys.readouterr().out          # the sweep alone cannot see the Safe
+    assert main(["probe", "--rpc", rpc, "--markdown", "--role-candidates", f"{safe.address},{unrelated.address}", box.address]) == 0
+    out = capsys.readouterr().out
+    assert f"DEFAULT_ADMIN_ROLE held by 2-of-3 Safe {safe.address} with no timelock" in out
+    assert unrelated.address[:6] not in out
