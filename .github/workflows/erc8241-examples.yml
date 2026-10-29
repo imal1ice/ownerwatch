@@ -49,7 +49,7 @@ jobs:
         env:
           RPC: https://mainnet.gateway.tenderly.co
         run: |
-          set -uo pipefail
+          set +e -uo pipefail   # the stale and omission examples are meant to exit 1
           b=$(python -c 'import json;print(json.load(open("examples/erc-8241/aave-v3-drafted.json"))["observedAtBlock"])')
           for f in drafted stale omission; do
             ownerwatch disclosure check "examples/erc-8241/aave-v3-$f.json" --rpc "$RPC" --block "$b" > "examples/erc-8241/aave-v3-$f.check.txt"
