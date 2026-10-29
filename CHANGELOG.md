@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 0.9.1 - 2026-10-29
 - disclosure: completeness replays RoleGranted/RoleRevoked logs up to the pinned block by default (every role holder, confirmed with hasRole at that block); roles are compared by hash and named from the contract's own bytes32 getters. `--no-roles-from-logs`, `--logs-rpc`, `--from-block`.
 - probe: governance shapes of large protocols, each checked on mainnet: Aragon apps (Lido stETH, Curve's DAO agent) recognised through `kernel()`/`appId()` and treated as DAO-governed; Balancer-style `getAuthorizer()` followed to the actual authorizer; AccessControlEnumerable role members listed directly (no candidates needed); Euler-style `upgradeAdmin()`; Curve-style `dao()` and `emergency()`; Maker/Sky `wards` with the Sky pause proxy, and DSPause (`delay()` + `authority()`) as a timelock (Spark resolves to the 48h pause).
 - probe: after role holders are known, "no recognised timelock" findings are re-evaluated, counting an owner-less AccessControl contract's DEFAULT_ADMIN_ROLE holders as its controllers (Euler's FactoryGovernor behind its 4-day timelock).
