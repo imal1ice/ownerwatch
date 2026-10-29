@@ -198,3 +198,44 @@ contract RoleLog {
         emit RoleGranted(role, account, msg.sender);
     }
 }
+// Governance patterns of large protocols: an Aragon app (Lido), a Balancer-style vault with an enumerable
+// AccessControl authorizer, a factory with upgradeAdmin() (Euler), a Curve-style admin with dao()/emergency(),
+// and Maker/Sky wards with a DSPause-like timelock behind the pause proxy (Spark).
+contract AragonAppLike {
+    address public kernel = address(0xA1);
+    function appId() external pure returns (bytes32) { return keccak256("lido"); }
+}
+contract EnumerableAuthorizer {
+    address[] internal admins;
+    constructor() { admins.push(msg.sender); }
+    function hasRole(bytes32 role, address who) external view returns (bool) { return role == bytes32(0) && who == admins[0]; }
+    function getRoleMemberCount(bytes32 role) external view returns (uint256) { return role == bytes32(0) ? admins.length : 0; }
+    function getRoleMember(bytes32, uint256 i) external view returns (address) { return admins[i]; }
+}
+contract VaultLike {
+    address public authorizerAddr;
+    function setAuthorizer(address a) external { authorizerAddr = a; }
+    function getAuthorizer() external view returns (address) { return authorizerAddr; }
+}
+contract FactoryUpgradeAdminLike {
+    address public upgradeAdmin;
+    function setUpgradeAdmin(address a) external { upgradeAdmin = a; }
+}
+contract CurveAdminLike {
+    address public dao;
+    address public emergency;
+    function set(address d, address e) external { dao = d; emergency = e; }
+}
+contract DSPauseLike {
+    function delay() external pure returns (uint256) { return 172800; }
+    function authority() external pure returns (address) { return address(0xC41EF); }
+    function plans(bytes32) external pure returns (bool) { return false; }
+}
+contract PauseProxyLike {
+    address public owner;
+    function setOwner(address o) external { owner = o; }
+}
+contract WardsLike {
+    mapping(address => uint256) public wards;
+    function rely(address a) external { wards[a] = 1; }
+}

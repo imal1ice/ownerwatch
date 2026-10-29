@@ -198,3 +198,52 @@ def test_aave_immutable_admin_proxy_behind_payloads_controller(anvil, artifacts)
     assert c.kind == "timelock" and c.delay == 86400          # the shortest executor delay
     for node in (n, p.seen[prov.address], p.seen[ex.address]):
         assert not any("no recognised timelock" in x or "with no timelock" in x for x in node.notes), node.notes
+
+
+def test_governance_patterns_of_large_protocols(anvil, artifacts):  # noqa: F811
+    """Lido, Balancer, Euler, Curve and Spark governance shapes, each read without a false "no timelock"."""
+    from ownerwatch.probe import SKY_PAUSE_PROXY
+    w3 = anvil
+    acct = w3.eth.accounts[0]
+    send = lambda tx: w3.eth.wait_for_transaction_receipt(tx.transact({"from": acct}))  # noqa: E731
+    p = Prober(w3)
+
+    app = _deploy(w3, *artifacts["AragonAppLike"])
+    n = p.probe(app.address)
+    assert n.kind == "aragon-app" and n.kernel and any("Aragon app" in x for x in n.notes)
+
+    auth = _deploy(w3, *artifacts["EnumerableAuthorizer"])
+    vault = _deploy(w3, *artifacts["VaultLike"])
+    send(vault.functions.setAuthorizer(auth.address))
+    p2 = Prober(w3)
+    v = p2.probe(vault.address)
+    assert v.authorizer == auth.address
+    p2.check_roles([])                                   # no candidates: enumeration alone finds the admin
+    assert p2.seen[auth.address].roles == {"DEFAULT_ADMIN_ROLE": [acct]}
+
+    tl = _deploy(w3, *artifacts["OwnedTimelockLike"])
+    fac = _deploy(w3, *artifacts["FactoryUpgradeAdminLike"])
+    send(fac.functions.setUpgradeAdmin(tl.address))
+    f = Prober(w3).probe(fac.address)
+    assert f.proxy_admin == tl.address and not any("no recognised timelock" in x for x in f.notes)
+
+    ca = _deploy(w3, *artifacts["CurveAdminLike"])
+    send(ca.functions.set(app.address, acct))
+    c = Prober(w3).probe(ca.address)
+    assert c.dao == app.address and c.emergency == acct
+    assert any("emergency() is an EOA" in x for x in c.notes)      # the emergency path really is undelayed
+
+    pause = _deploy(w3, *artifacts["DSPauseLike"])
+    proxy_art = artifacts["PauseProxyLike"]
+    tmp = _deploy(w3, *proxy_art)
+    w3.provider.make_request("anvil_setCode", [SKY_PAUSE_PROXY, w3.eth.get_code(tmp.address).hex()])
+    w3.eth.contract(address=SKY_PAUSE_PROXY, abi=proxy_art[0]).functions.setOwner(pause.address).transact({"from": acct})
+    wards = _deploy(w3, *artifacts["WardsLike"])
+    send(wards.functions.rely(SKY_PAUSE_PROXY))
+    owned = _deploy(w3, *artifacts["ExecutorLike"])            # owner() = deployer, then handed to the wards contract
+    send(owned.functions.setOwner(wards.address))
+    p5 = Prober(w3)
+    o = p5.probe(owned.address)
+    assert p5.seen[wards.address].wards == [SKY_PAUSE_PROXY]
+    assert p5.seen[pause.address].kind == "timelock" and p5.seen[pause.address].delay == 172800
+    assert not any("no recognised timelock" in x for x in o.notes), o.notes

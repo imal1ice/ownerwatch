@@ -49,7 +49,9 @@ def artifacts():
     subprocess.run(["forge", "build", "--root", str(FIXTURES)], check=True, capture_output=True)
     out = {}
     for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto", "SafeLike", "Payloads", "SoladyTimelockLike", "OwnedTimelockLike", "ProxyFactoryLike",
-                 "AaveProviderLike", "ExecutorLike", "PayloadsControllerLike", "RoleLog"):
+                 "AaveProviderLike", "ExecutorLike", "PayloadsControllerLike", "RoleLog",
+                 "AragonAppLike", "EnumerableAuthorizer", "VaultLike", "FactoryUpgradeAdminLike", "CurveAdminLike",
+                 "DSPauseLike", "PauseProxyLike", "WardsLike"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out

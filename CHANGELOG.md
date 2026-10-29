@@ -1,10 +1,14 @@
 # Changelog
 
 ## Unreleased
+- disclosure: completeness replays RoleGranted/RoleRevoked logs up to the pinned block by default (every role holder, confirmed with hasRole at that block); roles are compared by hash and named from the contract's own bytes32 getters. `--no-roles-from-logs`, `--logs-rpc`, `--from-block`.
+- probe: governance shapes of large protocols, each checked on mainnet: Aragon apps (Lido stETH, Curve's DAO agent) recognised through `kernel()`/`appId()` and treated as DAO-governed; Balancer-style `getAuthorizer()` followed to the actual authorizer; AccessControlEnumerable role members listed directly (no candidates needed); Euler-style `upgradeAdmin()`; Curve-style `dao()` and `emergency()`; Maker/Sky `wards` with the Sky pause proxy, and DSPause (`delay()` + `authority()`) as a timelock (Spark resolves to the 48h pause).
+- probe: after role holders are known, "no recognised timelock" findings are re-evaluated, counting an owner-less AccessControl contract's DEFAULT_ADMIN_ROLE holders as its controllers (Euler's FactoryGovernor behind its 4-day timelock).
+- probe: fixed a crash when an enumerable role had no members.
 
 ## 0.9.0 - 2026-10-29
 - `ownerwatch disclosure draft|check`: ERC-8241 (Protocol Control Disclosure) support. `draft` writes a disclosure from chain state (components, nodes, powers, and the controller chain as edges); `check` verifies one at a pinned block, record by record (ok, mismatch, unverifiable), and lists observed control over the declared components that no power declares. Exit code 1 on any mismatch or undisclosed power. See docs/erc-8241.md; Aave V3 examples in examples/erc-8241/.
-- probe: Aave V3 is read correctly. Immutable-admin proxies (the Pool, answering `admin()` only to their admin) resolve to their admin, found by asking as each address embedded in the bytecode. The Governance V3 PayloadsController counts as a timelock, with the shortest delay in its executor settings. A contract counts as timelocked when every controller it has leads to a timelock within two hops, so the Executor and the PoolAddressesProvider no longer get a false "no recognised timelock" finding.
+- probe: Aave V3 is read correctly. Immutable-admin proxies (the Pool, answering `admin()` only to their admin) resolve to their admin, found by asking as each address embedded in the bytecode. The Governance V3 PayloadsController counts as a timelock, with the shortest delay in its executor settings. A contract counts as timelocked when every controller it has leads to a timelock within four hops, so the Executor and the PoolAddressesProvider no longer get a false "no recognised timelock" finding.
 - Tests: Aave-pattern fixtures (immutable-admin proxy, provider, executor, PayloadsController); the full suite, including the anvil tests, passes locally.
 
 ## 0.8.0 - 2026-10-29

@@ -33,6 +33,8 @@ MULTICALL3_ABI = [{"type": "function", "name": "aggregate3", "stateMutability": 
 
 
 SOLADY_ERC1967_FACTORY = "0x0000000000006396FF2a80c067f99B3d2Ab4Df24"   # canonical, same address on every chain
+# Sky (MakerDAO) governance acts through this proxy, which the DSPause controls; contracts authorise it as a ward.
+SKY_PAUSE_PROXY = "0xBE8E3e3618f7474F8cB1d074A26afFef007E98FB"
 
 
 def _sel(sig: str) -> bytes:
@@ -89,6 +91,11 @@ class Node:
     delay: int | None = None
     paused: bool | None = None
     roles: dict[str, list[str]] = field(default_factory=dict)   # role name -> holders found among probed addresses
+    kernel: str | None = None           # Aragon app: the DAO kernel whose ACL grants upgrades and permissions
+    authorizer: str | None = None       # Balancer-style getAuthorizer(), followed to the actual authorizer
+    dao: str | None = None              # dao() (Curve admin contracts and similar)
+    emergency: str | None = None        # emergency() (Curve)
+    wards: list[str] = field(default_factory=list)   # DSAuth/Maker wards among the addresses tested
     open_executor: bool | None = None
     notes: list[str] = field(default_factory=list)
 
@@ -133,6 +140,13 @@ class Prober:
                 raise RuntimeError(f"RPC refused eth_call ({e}); use an RPC that supports reads, e.g. https://eth.drpc.org") from e
             return None
 
+    def _call_args(self, addr: str, sig: str, args: bytes) -> bytes | None:
+        try:
+            r = self.w3.eth.call({"to": addr, "data": _sel(sig) + args})
+            return bytes(r) if r else None
+        except Exception:  # noqa: BLE001
+            return None
+
     def _addr(self, addr: str, sig: str) -> str | None:
         r = self._call(addr, sig)
         if r and len(r) >= 32:
@@ -165,6 +179,17 @@ class Prober:
         for n, sup in zip(contracts, supports):
             if sup is None or len(sup) != 32:
                 continue
+            # AccessControlEnumerable lists its members: no need to guess candidates
+            for name, role in ROLES.items():
+                count = self._batch_calls([(n.address, _sel("getRoleMemberCount(bytes32)") + role)])[0]
+                if not count or len(count) != 32:
+                    break
+                k = int.from_bytes(count, "big")
+                calls = [(n.address, _sel("getRoleMember(bytes32,uint256)") + role + i.to_bytes(32, "big")) for i in range(min(k, 50))]
+                members = [Web3.to_checksum_address("0x" + r[12:32].hex()) for r in self._batch_calls(calls) if r and len(r) == 32]
+                for m in members:
+                    if m not in n.roles.get(name, []):
+                        n.roles.setdefault(name, []).append(m)
             pairs = [(name, c) for name in ROLES for c in candidates if c != n.address]
             if n.kind == "timelock":
                 pairs.append(("EXECUTOR_ROLE", ZERO))
@@ -177,16 +202,31 @@ class Prober:
                 if c == ZERO:
                     n.open_executor = True
                     n.notes.append("executor role is open: anyone can execute a matured operation")
-                else:
+                elif c not in n.roles.get(name, []):
                     n.roles.setdefault(name, []).append(c)
             if n.kind == "timelock" and n.open_executor is None:
                 n.open_executor = False
+            self._refine_notes()
             for who in n.roles.get("DEFAULT_ADMIN_ROLE", []):
                 c = self.seen.get(who)
                 if c and c.kind == "eoa":
                     n.notes.append(f"DEFAULT_ADMIN_ROLE held by EOA {who}")
                 elif c and c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}")
+
+    def _refine_notes(self) -> None:
+        """Once role holders are known, drop "no recognised timelock" notes whose controller turns out to act
+        through a timelock (an AccessControl contract whose DEFAULT_ADMIN_ROLE is a timelock, for instance)."""
+        import re
+        pat = re.compile(r" is (0x[0-9a-fA-F]{40}) with no recognised timelock in between$")
+        for n in list(self.seen.values()):
+            keep = []
+            for note in n.notes:
+                m = pat.search(note)
+                c = self.seen.get(m.group(1)) if m else None
+                if c is None or not self._timelocked(c):
+                    keep.append(note)
+            n.notes = keep
 
     def role_names(self, addr: str) -> dict[str, str]:
         """Map role hashes to names by calling every zero-argument bytes32 getter
@@ -384,14 +424,16 @@ class Prober:
                 delays.append(int.from_bytes(r[32:64], "big"))
         return min(delays) if delays else None
 
-    def _timelocked(self, n: Node, hops: int = 2) -> bool:
+    def _timelocked(self, n: Node, hops: int = 4) -> bool:
         """A node acts through a timelock: it is one, or every controller it has (upgrade admin, owner(), admin())
         is, within a few hops. Aave's PoolAddressesProvider is owned by an executor that the PayloadsController owns."""
-        if n.kind in ("timelock", "legacy-timelock"):
+        if n.kind in ("timelock", "legacy-timelock", "aragon-app"):   # an Aragon app acts only through DAO votes
             return True
         if hops == 0 or n.kind in ("eoa", "safe"):
             return False
-        ctls = {a for a in (n.proxy_admin, n.owner, n.admin) if a and a != n.address}
+        ctls = {a for a in (n.proxy_admin, n.owner, n.admin, n.dao, n.emergency, *n.wards) if a and a != n.address}
+        if not ctls:   # an AccessControl contract with no owner: whoever holds DEFAULT_ADMIN_ROLE controls it
+            ctls = {a for a in n.roles.get("DEFAULT_ADMIN_ROLE", []) if a != n.address}
         return bool(ctls) and all(self._timelocked(self.seen.get(a) or self.probe(a, depth=2), hops - 1) for a in ctls)
 
     # ---- probe ----
@@ -437,6 +479,10 @@ class Prober:
             n.delay = d
         legacy = self._uint(address, "delay()")
         legacy_admin = self._addr(address, "admin()")
+        if (legacy is not None and n.kind == "unknown" and not legacy_admin and self._addr(address, "authority()")
+                and self._call_args(address, "plans(bytes32)", bytes(32)) is not None):
+            n.kind = "timelock"                   # Sky/Maker DSPause: delay() + authority() (the chief), plans
+            n.delay = legacy
         if legacy is not None and legacy_admin and n.kind == "unknown":
             n.kind = "legacy-timelock"            # Compound-style: delay() + admin()
             n.delay = legacy
@@ -449,6 +495,24 @@ class Prober:
             n.kind = "proxy" if (n.implementation or n.beacon) else "contract"
         n.owner = self._addr(address, "owner()")
         n.pending_owner = self._addr(address, "pendingOwner()")
+        if self._call(address, "appId()") is not None:
+            n.kernel = self._addr(address, "kernel()")
+        if n.kernel and n.kind in ("contract", "proxy"):
+            n.kind = "aragon-app"
+            n.notes.append(f"Aragon app: upgrades and permissions are granted in the ACL of kernel {n.kernel} "
+                           "(APP_MANAGER_ROLE and app roles), normally only through DAO votes; ACL holders are not listed here")
+        auth = self._addr(address, "getAuthorizer()")
+        if auth:
+            n.authorizer = self._addr(auth, "getActualAuthorizer()") or auth
+        n.dao = self._addr(address, "dao()")
+        n.emergency = self._addr(address, "emergency()")
+        upgrade_admin = self._addr(address, "upgradeAdmin()")   # Euler-style factories upgrade their beacon proxies
+        if upgrade_admin and not n.proxy_admin:
+            n.proxy_admin = upgrade_admin
+        if n.kind not in ("eoa", "safe") and self._call_args(address, "wards(address)", bytes(32)) is not None:
+            r = self._call_args(address, "wards(address)", bytes(12) + bytes.fromhex(SKY_PAUSE_PROXY[2:]))
+            if r and int.from_bytes(r[:32], "big") == 1:
+                n.wards.append(SKY_PAUSE_PROXY)
         if n.admin is None:
             n.admin = n.proxy_admin or self._addr(address, "admin()") if n.kind != "safe" else None
         p = self._call(address, "paused()")
@@ -468,6 +532,9 @@ class Prober:
                 links.setdefault(n.owner, []).append("owner()")
             if n.admin and n.admin != address and n.admin != n.proxy_admin:
                 links.setdefault(n.admin, []).append("admin()")
+            for ctl, what in ((n.authorizer, "authorizer"), (n.dao, "dao()"), (n.emergency, "emergency()"), *((w, "ward") for w in n.wards)):
+                if ctl and ctl != address:
+                    links.setdefault(ctl, []).append(what)
             for ctl, roles in links.items():
                 c = self.probe(ctl, depth + 1)
                 what = " and ".join(roles)
@@ -498,6 +565,11 @@ def describe(n: Node) -> str:
         bits.append(f"pendingOwner={n.pending_owner}")
     if n.admin and n.admin != n.proxy_admin:
         bits.append(f"admin={n.admin}")
+    for label, v in (("kernel", n.kernel), ("authorizer", n.authorizer), ("dao", n.dao), ("emergency", n.emergency)):
+        if v:
+            bits.append(f"{label}={v}")
+    if n.wards:
+        bits.append(f"wards={','.join(n.wards)}")
     if n.safe_threshold is not None:
         bits.append(f"safe {n.safe_threshold}-of-{len(n.safe_owners)}")
     if n.delay is not None:
