@@ -355,6 +355,45 @@ class Prober:
                     return a, f
         return None, None
 
+    def _immutable_admin(self, proxy: str, code: bytes) -> str | None:
+        """Aave's immutable-admin proxies keep the admin in their bytecode and answer admin() only to the admin
+        (anyone else falls through to the implementation). Ask as each embedded address: the one the proxy
+        answers with itself is the admin."""
+        data = _sel("admin()")
+        for cand in _embedded_addresses(code):
+            if cand == proxy:
+                continue
+            try:
+                r = bytes(self.w3.eth.call({"from": cand, "to": proxy, "data": data}))
+            except Exception:  # noqa: BLE001
+                continue
+            if len(r) == 32 and r[:12] == bytes(12) and Web3.to_checksum_address("0x" + r[12:].hex()) == cand:
+                return cand
+        return None
+
+    def _executor_delay(self, address: str) -> int | None:
+        """Aave Governance V3 PayloadsController: the delay is per executor, in getExecutorSettingsByAccessControl.
+        The shortest one is how fast this controller can act."""
+        delays = []
+        for level in (1, 2):
+            try:
+                r = bytes(self.w3.eth.call({"to": address, "data": _sel("getExecutorSettingsByAccessControl(uint8)") + level.to_bytes(32, "big")}))
+            except Exception:  # noqa: BLE001
+                continue
+            if len(r) >= 64 and r[12:32] != bytes(20):
+                delays.append(int.from_bytes(r[32:64], "big"))
+        return min(delays) if delays else None
+
+    def _timelocked(self, n: Node, hops: int = 2) -> bool:
+        """A node acts through a timelock: it is one, or every controller it has (upgrade admin, owner(), admin())
+        is, within a few hops. Aave's PoolAddressesProvider is owned by an executor that the PayloadsController owns."""
+        if n.kind in ("timelock", "legacy-timelock"):
+            return True
+        if hops == 0 or n.kind in ("eoa", "safe"):
+            return False
+        ctls = {a for a in (n.proxy_admin, n.owner, n.admin) if a and a != n.address}
+        return bool(ctls) and all(self._timelocked(self.seen.get(a) or self.probe(a, depth=2), hops - 1) for a in ctls)
+
     # ---- probe ----
     def probe(self, address: str, depth: int = 0) -> Node:
         address = Web3.to_checksum_address(address)
@@ -372,6 +411,8 @@ class Prober:
         n.beacon = self._slot_addr(address, BEACON_SLOT)
         if n.implementation and not n.proxy_admin and not n.beacon:
             n.proxy_admin, n.admin_factory = self._factory_admin(address, code)
+            if not n.proxy_admin:
+                n.proxy_admin = self._immutable_admin(address, code)
         thr = self._uint(address, "getThreshold()")
         owners = self._call(address, "getOwners()")
         if thr is not None and owners and len(owners) >= 64:
@@ -389,6 +430,8 @@ class Prober:
             d = self._uint(address, "getDelay()")     # Aave Governance V3 executors and similar
         if d is None:
             d = self._uint(address, "minDelay()")     # Solady Timelock
+        if d is None:
+            d = self._executor_delay(address)         # Aave Governance V3 PayloadsController
         if d is not None and n.kind == "unknown":
             n.kind = "timelock"
             n.delay = d
@@ -432,7 +475,7 @@ class Prober:
                     n.notes.append(f"{what} is an EOA {ctl}: one private key, no timelock, no multisig")
                 elif c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"{what} is a 1-of-N Safe {ctl}")
-                elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract"):
+                elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract") and not self._timelocked(c):
                     if roles == ["owner()"] and n.proxy_admin and n.proxy_admin != ctl:
                         n.notes.append(f"owner() is {ctl} with no timelock: owner-level settings change immediately "
                                        f"(upgrades are separate, via {n.proxy_admin})")

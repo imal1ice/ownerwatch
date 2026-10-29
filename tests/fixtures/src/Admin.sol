@@ -137,3 +137,47 @@ contract ProxyFactoryLike {
         lastProxy = p;
     }
 }
+
+// Aave V3 patterns: Pool proxy with its admin (the PoolAddressesProvider) as an immutable, answering admin()
+// only to the admin; the provider owned by an executor; the executor owned by a PayloadsController whose
+// delay lives in its executor settings, per access level.
+contract ImmutableAdminProxyLike {
+    address internal immutable _admin;
+    constructor(address impl) {
+        _admin = msg.sender;
+        assembly { sstore(0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc, impl) }
+    }
+    function admin() external returns (address) {
+        if (msg.sender == _admin) return _admin;
+        _delegate();
+    }
+    fallback() external payable { _delegate(); }
+    function _delegate() internal {
+        assembly {
+            let impl := sload(0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)
+            calldatacopy(0, 0, calldatasize())
+            let ok := delegatecall(gas(), impl, 0, calldatasize(), 0, 0)
+            returndatacopy(0, 0, returndatasize())
+            switch ok case 0 { revert(0, returndatasize()) } default { return(0, returndatasize()) }
+        }
+    }
+}
+contract AaveProviderLike {
+    address public owner = msg.sender;
+    address public lastProxy;
+    function setOwner(address o) external { owner = o; }
+    function deploy(address impl) external { lastProxy = address(new ImmutableAdminProxyLike(impl)); }
+}
+contract ExecutorLike {
+    address public owner = msg.sender;
+    function setOwner(address o) external { owner = o; }
+}
+contract PayloadsControllerLike {
+    struct ExecutorConfig { address executor; uint40 delay; }
+    mapping(uint8 => ExecutorConfig) internal _executors;
+    address public owner = msg.sender;
+    function setExecutor(uint8 level, address executor, uint40 delay) external { _executors[level] = ExecutorConfig(executor, delay); }
+    function getExecutorSettingsByAccessControl(uint8 level) external view returns (ExecutorConfig memory) {
+        return _executors[level];
+    }
+}

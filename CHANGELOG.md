@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.8.1 - 2026-10-29
+- probe: Aave V3 is read correctly. Immutable-admin proxies (the Pool, answering `admin()` only to their admin) resolve to their admin, found by asking as each address embedded in the bytecode. The Governance V3 PayloadsController counts as a timelock, with the shortest delay in its executor settings. A contract counts as timelocked when every controller it has leads to a timelock within two hops, so the Executor and the PoolAddressesProvider no longer get a false "no recognised timelock" finding.
+- Tests: Aave-pattern fixtures (immutable-admin proxy, provider, executor, PayloadsController); the full suite, including the anvil tests, passes locally.
+
 ## 0.8.0 - 2026-10-29
 - Governance systems that ownerwatch could not read before, each checked against 90 days of mainnet logs (tests/fixtures/governance_logs.json):
   - Sky: DSPause spells as DSNote call logs (plot, exec, drop, setDelay, read from the calldata the note carries), LogSetOwner, LogSetAuthority, DSChief Lift.

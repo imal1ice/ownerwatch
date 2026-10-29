@@ -175,3 +175,26 @@ def test_owned_custom_timelock(anvil, artifacts):  # noqa: F811
     tl = _deploy(w3, *artifacts["OwnedTimelockLike"])
     n = Prober(w3).probe(tl.address)
     assert n.kind == "timelock" and n.delay == 172800
+
+
+def test_aave_immutable_admin_proxy_behind_payloads_controller(anvil, artifacts):  # noqa: F811
+    """Aave V3: Pool proxy -> PoolAddressesProvider (immutable admin) -> Executor -> PayloadsController.
+    The proxy's admin must be found, and the controller's per-executor delay must count as a timelock all the
+    way down, so nothing on the path is reported as having no timelock."""
+    w3 = anvil
+    acct = w3.eth.accounts[0]
+    ctl = _deploy(w3, *artifacts["PayloadsControllerLike"])
+    ex = _deploy(w3, *artifacts["ExecutorLike"])
+    prov = _deploy(w3, *artifacts["AaveProviderLike"])
+    impl = _deploy(w3, *artifacts["Admin"])
+    for tx in (ctl.functions.setExecutor(1, ex.address, 86400), ctl.functions.setExecutor(2, ex.address, 604800),
+               ex.functions.setOwner(ctl.address), prov.functions.setOwner(ex.address), prov.functions.deploy(impl.address)):
+        w3.eth.wait_for_transaction_receipt(tx.transact({"from": acct}))
+    proxy = prov.functions.lastProxy().call()
+    p = Prober(w3)
+    n = p.probe(proxy)
+    assert n.kind == "proxy" and n.implementation == impl.address and n.proxy_admin == prov.address
+    c = p.seen[ctl.address]
+    assert c.kind == "timelock" and c.delay == 86400          # the shortest executor delay
+    for node in (n, p.seen[prov.address], p.seen[ex.address]):
+        assert not any("no recognised timelock" in x or "with no timelock" in x for x in node.notes), node.notes
