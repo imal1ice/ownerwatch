@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("addresses", nargs="*")
     pr.add_argument("--rpc", default=None)
     pr.add_argument("--config", default=None, help="probe every contract and Safe listed in this config (per chain)")
-    pr.add_argument("--chain-name", default="ethereum")
+    pr.add_argument("--chain-name", default=None, help="name used in reports and configs (default: inferred from the RPC chain id)")
     pr.add_argument("--safe-chain", default=None, help="Safe Tx Service key (eth, base, arb1, oeth, ...) to add safes: entries")
     pr.add_argument("--label", default="Protocol")
     pr.add_argument("--yaml", action="store_true", help="print only the suggested config")
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cmd == "probe":
         from web3 import Web3
-        from .probe import Prober, describe, markdown_report, suggest_config
+        from .probe import Prober, chain_name_for, describe, markdown_report, suggest_config
         if a.config:
             # one report per chain, addresses taken from the config
             cfgs_ = load_all(a.config)
@@ -134,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
         if not a.rpc or not a.addresses:
             p.error("probe needs --rpc and at least one address, or --config")
         prober = Prober(Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30})))
+        if a.chain_name is None:
+            a.chain_name = chain_name_for(prober.w3.eth.chain_id)
         roots = [prober.probe(x) for x in a.addresses]
         extra = [Web3.to_checksum_address(x) for x in a.role_candidates.replace(" ", ",").split(",") if x]
         prober.check_roles(list(dict.fromkeys([*prober.seen.keys(), *extra])))

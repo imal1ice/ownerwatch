@@ -620,6 +620,14 @@ def suggest_config(prober: Prober, rpc_url: str, chain_name: str, safe_chain: st
     return yaml.safe_dump(cfg, sort_keys=False)
 
 
+CHAIN_NAMES = {1: "ethereum", 10: "optimism", 56: "bsc", 100: "gnosis", 137: "polygon", 8453: "base",
+               42161: "arbitrum", 43114: "avalanche", 59144: "linea", 534352: "scroll"}
+
+
+def chain_name_for(chain_id: int) -> str:
+    return CHAIN_NAMES.get(chain_id, f"chain {chain_id}")
+
+
 def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Node]) -> str:
     """A short admin-surface report a protocol team can read in two minutes."""
     def short(a: str) -> str:
