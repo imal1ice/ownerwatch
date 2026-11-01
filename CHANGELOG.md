@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 0.9.3 - 2026-11-01
 - README: "Support the project" section removed with FUNDING.json and .github/FUNDING.yml (no donation address or Drips link).
 
 ## 0.9.2 - 2026-10-29
