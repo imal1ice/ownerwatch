@@ -37,6 +37,29 @@ SOLADY_ERC1967_FACTORY = "0x0000000000006396FF2a80c067f99B3d2Ab4Df24"   # canoni
 SKY_PAUSE_PROXY = "0xBE8E3e3618f7474F8cB1d074A26afFef007E98FB"
 
 
+EIP1167_PREFIX = bytes.fromhex("363d3d373d3d3d363d73")
+EIP1167_SUFFIX = bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
+AM_PUBLIC_ROLE = 2**64 - 1
+# Selectors checked on AccessManaged targets when no verified ABI is available
+AM_FALLBACK_FNS = ["upgradeToAndCall(address,bytes)", "setAuthority(address)", "pause()", "unpause()",
+                   "mint(address,uint256)", "transferOwnership(address)"]
+
+
+def _abi_type(i: dict) -> str:
+    """Canonical type of an ABI input, expanding tuples: (address,bytes)[]."""
+    t = i["type"]
+    if t.startswith("tuple"):
+        return "(" + ",".join(_abi_type(c) for c in i.get("components") or []) + ")" + t[5:]
+    return t
+
+
+def _clone_target(code: bytes) -> str | None:
+    """Implementation of an EIP-1167 minimal proxy, from its 45-byte runtime code."""
+    if len(code) == 45 and code[:10] == EIP1167_PREFIX and code[30:] == EIP1167_SUFFIX:
+        return Web3.to_checksum_address("0x" + code[10:30].hex())
+    return None
+
+
 def _sel(sig: str) -> bytes:
     return Web3.keccak(text=sig)[:4]
 
@@ -97,6 +120,11 @@ class Node:
     emergency: str | None = None        # emergency() (Curve)
     wards: list[str] = field(default_factory=list)   # DSAuth/Maker wards among the addresses tested
     open_executor: bool | None = None
+    clone_of: str | None = None         # EIP-1167 minimal proxy: fixed implementation, not upgradeable by itself
+    authority: str | None = None        # OpenZeppelin AccessManaged: the AccessManager that gates its functions
+    am_roles: dict[int, list[tuple[str, int]]] = field(default_factory=dict)   # AccessManager: role id -> [(holder, execution delay)]
+    am_role_admin: dict[int, int] = field(default_factory=dict)                # AccessManager: role id -> admin role id
+    am_gates: dict[int, list[str]] = field(default_factory=dict)              # AccessManager: role id -> ["fn on 0xTarget"]
     notes: list[str] = field(default_factory=list)
 
 
@@ -230,6 +258,7 @@ class Prober:
                         continue
                     if note not in n.notes:
                         n.notes.append(note)
+        self.check_access_managers(candidates)
 
     def _refine_notes(self) -> None:
         """Once role holders are known, drop "no recognised timelock" notes whose controller turns out to act
@@ -334,8 +363,13 @@ class Prober:
         from_block is given; logs_w3 can be a different RPC that serves wide log
         ranges (e.g. the Tenderly public gateways, full history in one call) while self.w3 does the reads."""
         addr = Web3.to_checksum_address(addr)
-        granted = _norm(topic0("RoleGranted(bytes32,address,address)"))
-        revoked = _norm(topic0("RoleRevoked(bytes32,address,address)"))
+        is_am = (self.seen.get(addr) or self.probe(addr)).kind == "access-manager"
+        if is_am:
+            granted = _norm(topic0("RoleGranted(uint64,address,uint32,uint48,bool)"))
+            revoked = _norm(topic0("RoleRevoked(uint64,address)"))
+        else:
+            granted = _norm(topic0("RoleGranted(bytes32,address,address)"))
+            revoked = _norm(topic0("RoleRevoked(bytes32,address,address)"))
         if from_block is None:
             from_block = self.creation_block(addr)
             if log:
@@ -352,6 +386,8 @@ class Prober:
         else:
             logs = self._get_logs_split(params, from_block, to_block or (logs_w3 or self.w3).eth.block_number, w3=logs_w3, log=log)
         logs.sort(key=lambda l: (l["blockNumber"], l["logIndex"]))
+        if is_am:
+            return self._am_replay(addr, logs, granted)
         names = {("0x" + bytes(v).hex()): k for k, v in ROLES.items()}
         names.update(self.role_names(addr))
         holders: dict[str, set[str]] = {}
@@ -384,6 +420,26 @@ class Prober:
                 if note and note not in n.notes:
                     n.notes.append(note)
         return out
+
+    def _am_replay(self, addr: str, logs: list, granted: str) -> dict[str, list[str]]:
+        """AccessManager role replay: every account ever granted a role, confirmed with hasRole now."""
+        seen_pairs: set[tuple[int, str]] = set()
+        for lg in logs:
+            if "0x" + bytes(lg["topics"][0]).hex() == granted:
+                seen_pairs.add((int.from_bytes(bytes(lg["topics"][1]), "big"),
+                                Web3.to_checksum_address("0x" + bytes(lg["topics"][2])[-20:].hex())))
+        m = self.seen[addr]
+        self._am_map(m)
+        pairs = sorted(seen_pairs)
+        for (r, who), res in zip(pairs, self._am_has_role(addr, pairs)):
+            if res and res[0] and all(h != who for h, _ in m.am_roles.get(r, [])):
+                m.am_roles.setdefault(r, []).append((who, res[1]))
+        ids = sorted(r for r in m.am_roles if r not in m.am_role_admin)
+        for r, adm in zip(ids, self._batch_calls([(addr, _sel("getRoleAdmin(uint64)") + r.to_bytes(32, "big")) for r in ids])):
+            if adm and len(adm) >= 32:
+                m.am_role_admin[r] = int.from_bytes(adm[:32], "big")
+        self._am_findings(m)
+        return {f"role {r}": [h for h, _ in v] for r, v in m.am_roles.items()}
 
     def _slot_addr(self, addr: str, slot: int) -> str | None:
         v = self.w3.eth.get_storage_at(addr, slot)
@@ -441,6 +497,142 @@ class Prober:
                 delays.append(int.from_bytes(r[32:64], "big"))
         return min(delays) if delays else None
 
+    # ---- OpenZeppelin AccessManager ----
+    def _is_access_manager(self, addr: str) -> bool:
+        return self._uint(addr, "ADMIN_ROLE()") == 0 and self._uint(addr, "PUBLIC_ROLE()") == AM_PUBLIC_ROLE
+
+    def _am_has_role(self, am: str, pairs: list[tuple[int, str]]) -> list[tuple[bool, int] | None]:
+        calls = [(am, _sel("hasRole(uint64,address)") + r.to_bytes(32, "big") + bytes(12) + bytes.fromhex(a[2:])) for r, a in pairs]
+        out = []
+        for res in self._batch_calls(calls):
+            out.append((bool(int.from_bytes(res[:32], "big")), int.from_bytes(res[32:64], "big"))
+                       if res and len(res) >= 64 else None)
+        return out
+
+    def _am_target_fns(self, t: Node) -> list[str]:
+        """Function signatures of an AccessManaged target that change state, from its verified ABI
+        (or its implementation's), else a short list of common admin functions."""
+        from .decode import verified_abi
+        try:
+            chain_id = self.w3.eth.chain_id
+            abi = None
+            for a in (t.address, t.clone_of, t.implementation):
+                if a and not abi:
+                    abi = verified_abi(chain_id, a)
+        except Exception:  # noqa: BLE001
+            abi = None
+        fns = [f"{f['name']}({','.join(_abi_type(i) for i in f.get('inputs') or [])})" for f in abi or []
+               if f.get("type") == "function" and f.get("stateMutability") not in ("view", "pure")]
+        return list(dict.fromkeys(fns + AM_FALLBACK_FNS))
+
+    def _am_map(self, m: Node) -> set[int]:
+        """Role ids of an AccessManager that matter for the targets seen: the roles guarding their functions,
+        ADMIN_ROLE, and every role admin and guardian above them. Records which functions each role gates."""
+        targets = [n for n in self.seen.values() if n.authority == m.address]
+        roles: set[int] = {0}
+        for t in targets:
+            fns = self._am_target_fns(t)
+            calls = [(m.address, _sel("getTargetFunctionRole(address,bytes4)") + bytes(12) + bytes.fromhex(t.address[2:])
+                      + _sel(f) + bytes(28)) for f in fns]
+            for f, r in zip(fns, self._batch_calls(calls)):
+                if not r or len(r) < 32:
+                    continue
+                rid = int.from_bytes(r[:32], "big")
+                if rid == AM_PUBLIC_ROLE:
+                    continue
+                roles.add(rid)
+                label = f"{f.split('(')[0]} on {t.address}"
+                if label not in m.am_gates.setdefault(rid, []):
+                    m.am_gates[rid].append(label)
+        frontier = set(roles)
+        for _ in range(8):   # role admins (and guardians) of every role found, transitively
+            if not frontier:
+                break
+            ids = sorted(frontier)
+            res = self._batch_calls([(m.address, _sel("getRoleAdmin(uint64)") + r.to_bytes(32, "big")) for r in ids]
+                                    + [(m.address, _sel("getRoleGuardian(uint64)") + r.to_bytes(32, "big")) for r in ids])
+            new = set()
+            for i, r in enumerate(ids):
+                adm, grd = res[i], res[len(ids) + i]
+                if adm and len(adm) >= 32:
+                    a = int.from_bytes(adm[:32], "big")
+                    m.am_role_admin[r] = a
+                    if a not in roles and a != AM_PUBLIC_ROLE:
+                        new.add(a)
+                if grd and len(grd) >= 32:
+                    g = int.from_bytes(grd[:32], "big")
+                    if g not in roles and g not in (0, AM_PUBLIC_ROLE):
+                        new.add(g)
+            roles |= new
+            frontier = new
+        return roles
+
+    def check_access_managers(self, candidates: list[str]) -> None:
+        """For each AccessManager seen: map the managed targets' functions to roles, follow role admins,
+        and test which candidate addresses hold each role and with what execution delay. An AccessManager
+        does not enumerate members; --roles-from-logs replays its RoleGranted/RoleRevoked logs instead."""
+        for m in [n for n in self.seen.values() if n.kind == "access-manager"]:
+            roles = self._am_map(m)
+            tested: set[str] = {m.address}
+            cands = set(candidates) | set(self.seen)
+            for _ in range(3):   # holders found in one pass can lead to more: a Safe's signers often hold roles too
+                for n in list(self.seen.values()):
+                    if n.kind == "safe":
+                        cands |= set(n.safe_owners)
+                cands -= tested
+                if not cands:
+                    break
+                pairs = [(r, c) for r in sorted(roles) for c in sorted(cands)]
+                tested |= cands
+                cands = set()
+                for (r, c), res in zip(pairs, self._am_has_role(m.address, pairs)):
+                    if res and res[0] and all(h != c for h, _ in m.am_roles.get(r, [])):
+                        m.am_roles.setdefault(r, []).append((c, res[1]))
+                        holder = self.seen.get(c) or self.probe(c, depth=2)
+                        if holder.kind == "safe":
+                            cands |= set(holder.safe_owners)
+            self._am_findings(m)
+
+    def _am_findings(self, m: Node) -> None:
+        administers: dict[int, list[int]] = {}
+        for r, a in m.am_role_admin.items():
+            if a != r:
+                administers.setdefault(a, []).append(r)
+        targets = [n for n in self.seen.values() if n.authority == m.address]
+        for r, holders in sorted(m.am_roles.items()):
+            powers = []
+            if r == 0:
+                powers.append("ADMIN_ROLE: can grant any role and change which role guards any function")
+            if administers.get(r):
+                def _role(x: int) -> str:
+                    fns = sorted({g.split(" on ")[0] for g in m.am_gates.get(x, [])})
+                    return str(x) + (f" (calls {', '.join(fns[:3])})" if fns else "")
+                powers.append("can grant itself or others roles " + ", ".join(_role(x) for x in sorted(administers[r])))
+            if m.am_gates.get(r):
+                fns = sorted({g.split(" on ")[0] for g in m.am_gates[r]})
+                powers.append("calls " + ", ".join(fns[:5]) + (f" and {len(fns) - 5} more" if len(fns) > 5 else ""))
+            if not powers:
+                continue
+            for who, delay in holders:
+                if delay:
+                    continue
+                c = self.seen.get(who) or self.probe(who, depth=2)
+                if c.kind == "eoa":
+                    holder = f"EOA {who}"
+                elif c.kind == "safe" and c.safe_threshold == 1:
+                    holder = f"1-of-N Safe {who}"
+                elif c.kind == "safe" and r == 0:
+                    holder = f"{c.safe_threshold}-of-{len(c.safe_owners)} Safe {who}"
+                else:
+                    continue
+                note = f"role {r} held by {holder} with no execution delay ({'; '.join(powers)})"
+                if note not in m.notes:
+                    m.notes.append(note)
+                for t in targets:
+                    tn = f"AccessManager {m.address} " + note
+                    if (r == 0 or administers.get(r) or any(g.endswith(t.address) for g in m.am_gates.get(r, []))) and tn not in t.notes:
+                        t.notes.append(tn)
+
     def _timelocked(self, n: Node, hops: int = 4) -> bool:
         """A node acts through a timelock: it is one, or every controller it has (upgrade admin, owner(), admin())
         is, within a few hops. Aave's PoolAddressesProvider is owned by an executor that the PayloadsController owns."""
@@ -465,6 +657,7 @@ class Prober:
         if n.code_size == 0:
             n.kind = "eoa"
             return n
+        n.clone_of = _clone_target(code)
         n.implementation = self._slot_addr(address, IMPL_SLOT)
         n.proxy_admin = self._slot_addr(address, ADMIN_SLOT)
         n.beacon = self._slot_addr(address, BEACON_SLOT)
@@ -508,8 +701,14 @@ class Prober:
               and legacy <= 90 * 86400 and self._addr(address, "owner()")):
             n.kind = "timelock"                   # custom Ownable timelock: delay() + owner()
             n.delay = legacy
+        if n.kind == "unknown" and self._is_access_manager(address):
+            n.kind = "access-manager"
         if n.kind == "unknown":
             n.kind = "proxy" if (n.implementation or n.beacon) else "contract"
+        if n.kind in ("proxy", "contract"):
+            auth_ = self._addr(address, "authority()")
+            if auth_ and auth_ != address and self._is_access_manager(auth_):
+                n.authority = auth_
         n.owner = self._addr(address, "owner()")
         n.pending_owner = self._addr(address, "pendingOwner()")
         if self._call(address, "appId()") is not None:
@@ -552,6 +751,8 @@ class Prober:
             for ctl, what in ((n.authorizer, "authorizer"), (n.dao, "dao()"), (n.emergency, "emergency()"), *((w, "ward") for w in n.wards)):
                 if ctl and ctl != address:
                     links.setdefault(ctl, []).append(what)
+            if n.authority:
+                self.probe(n.authority, depth + 1)   # its role holders are resolved in check_roles
             for ctl, roles in links.items():
                 c = self.probe(ctl, depth + 1)
                 what = " and ".join(roles)
@@ -587,6 +788,10 @@ def describe(n: Node) -> str:
             bits.append(f"{label}={v}")
     if n.wards:
         bits.append(f"wards={','.join(n.wards)}")
+    if n.clone_of:
+        bits.append(f"clone_of={n.clone_of}")
+    if n.authority:
+        bits.append(f"authority={n.authority}")
     if n.safe_threshold is not None:
         bits.append(f"safe {n.safe_threshold}-of-{len(n.safe_owners)}")
     if n.delay is not None:
@@ -598,6 +803,10 @@ def describe(n: Node) -> str:
     s = "  ".join(bits)
     for role, holders in n.roles.items():
         s += f"\n    {role}: {', '.join(holders)}"
+    for r, holders in sorted(n.am_roles.items()):
+        s += f"\n    role {r}: " + ", ".join(f"{h} (delay {d}s)" for h, d in holders)
+        if r in n.am_role_admin and n.am_role_admin[r] != r:
+            s += f" [admin role {n.am_role_admin[r]}]"
     for note in n.notes:
         s += f"\n    ! {note}"
     return s
@@ -638,7 +847,7 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
     for n in prober.seen.values():
         if n.kind == "eoa":
             continue
-        ctl = n.proxy_admin or n.owner or n.admin or "-"
+        ctl = n.proxy_admin or n.owner or n.admin or n.authority or "-"
         detail = []
         if n.safe_threshold is not None:
             detail.append(f"{n.safe_threshold}-of-{len(n.safe_owners)}")
@@ -646,6 +855,13 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
             detail.append(f"{n.delay // 3600}h delay")
         if n.implementation:
             detail.append(f"impl {short(n.implementation)}")
+        if n.clone_of:
+            detail.append(f"EIP-1167 clone of {short(n.clone_of)} (not upgradeable)")
+        if n.authority:
+            detail.append(f"AccessManager {short(n.authority)}")
+        for r, holders in sorted(n.am_roles.items()):
+            name = "ADMIN_ROLE (0)" if r == 0 else f"role {r}"
+            detail.append(f"{name}: " + ", ".join(f"{short(h)}" + (f" ({d}s delay)" if d else "") for h, d in holders))
         if n.open_executor:
             detail.append("open executor")
         if n.paused:
@@ -660,11 +876,14 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
             lines.append(f"- `{short(a)}`: {note}")
     else:
         lines.append("- No single-key or zero-delay control paths found among the probed addresses.")
+    if any(n.kind == "access-manager" and not any(n.am_roles.get(r) for r in n.am_roles) for n in prober.seen.values()):
+        lines.append("- An AccessManager was found but none of the tested addresses holds a role in it. It does not list its "
+                     "members: rerun with --roles-from-logs, or pass likely holders with --role-candidates.")
     chain_summary = []
     for r in roots:
         path, cur, hops = [r], r, 0
         while hops < 3:
-            nxt = cur.proxy_admin or cur.owner or cur.admin
+            nxt = cur.proxy_admin or cur.owner or cur.admin or cur.authority
             if not nxt or nxt == cur.address or nxt not in prober.seen:
                 break
             cur = prober.seen[nxt]

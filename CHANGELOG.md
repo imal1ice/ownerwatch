@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- probe: OpenZeppelin AccessManager. A contract's `authority()` is followed to its AccessManager; the roles guarding the target's functions (from its verified ABI) and every role admin above them are mapped, and holders are found among probed addresses, `--role-candidates` and the signers of every Safe found, iterating as new holders appear, or with `--roles-from-logs` by replaying RoleGranted/RoleRevoked and confirming with hasRole. A single key or 1-of-N Safe holding ADMIN_ROLE, a role-admin role or a function role with no execution delay is a finding, written as what it unlocks ("can grant itself or others roles 200 (calls execute)").
+- probe: EIP-1167 minimal-proxy clones are recognised and shown as non-upgradeable clones of their implementation.
+- watch: AccessManager events (role grants and revokes with execution delay, role admin, function-role, target-closed and delay changes, scheduled operations) and AuthorityUpdated on managed contracts.
 
 ## 0.9.3 - 2026-11-01
 - README: "Support the project" section removed with FUNDING.json and .github/FUNDING.yml (no donation address or Drips link).

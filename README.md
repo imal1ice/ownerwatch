@@ -14,6 +14,7 @@ Every address in your config gets the full catalog:
 |---|---|---|
 | Ownable / Ownable2Step | OwnershipTransferred, OwnershipTransferStarted | critical / high |
 | AccessControl | RoleGranted, RoleRevoked, RoleAdminChanged | high / critical |
+| OpenZeppelin AccessManager | RoleGranted, RoleRevoked, RoleAdminChanged, TargetFunctionRoleUpdated, TargetClosed, TargetAdminDelayUpdated, RoleGrantDelayChanged, OperationScheduled; AuthorityUpdated on managed contracts | high / critical |
 | ERC-1967 proxies | Upgraded, AdminChanged, BeaconUpgraded | critical |
 | Pausable | Paused, Unpaused | medium |
 | TimelockController | CallScheduled, CallExecuted, Cancelled, MinDelayChange | high / critical |

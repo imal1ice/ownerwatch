@@ -51,7 +51,8 @@ def artifacts():
     for name in ("Admin", "Token", "NFT", "Multi", "Timelock", "LegacyTimelock", "Gov", "RoleBox", "Proto", "SafeLike", "Payloads", "SoladyTimelockLike", "OwnedTimelockLike", "ProxyFactoryLike",
                  "AaveProviderLike", "ExecutorLike", "PayloadsControllerLike", "RoleLog",
                  "AragonAppLike", "EnumerableAuthorizer", "VaultLike", "FactoryUpgradeAdminLike", "CurveAdminLike",
-                 "DSPauseLike", "PauseProxyLike", "WardsLike", "MultisigLike"):
+                 "DSPauseLike", "PauseProxyLike", "WardsLike", "MultisigLike",
+                 "AccessManagerLike", "ManagedLike", "CloneMaker"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out
@@ -243,3 +244,21 @@ def test_aave_payloads_controller(anvil, artifacts, tmp_path, monkeypatch):
     assert "payload 42 created by " + deployer in created.message and "2 actions" in created.message
     assert "delegatecall " + w3.eth.accounts[1] + ": execute()" in created.message and "setFee(7)" in created.message
     assert by["PayloadQueued"].severity == "high" and by["GuardianUpdated"].severity == "critical"
+
+
+def test_access_manager_events(anvil, artifacts, tmp_path):
+    w3 = anvil
+    a0, key = w3.eth.accounts[0], w3.eth.accounts[1]
+    am = _deploy(w3, *artifacts["AccessManagerLike"])
+    start = w3.eth.block_number + 1
+    cfg = Config(rpc_url="unused", chain_name="anvil", confirmations=0, start_block=start,
+                 state_file=str(tmp_path / "cursor.json"), contracts=[Contract(am.address, "Manager")], alerts=Alerts())
+    got: list = []
+    watcher = Watcher(cfg, Dispatcher(cfg.alerts, sinks=[got.append]), w3=w3)
+    am.functions.grant(100, key, 0).transact({"from": a0})
+    w3.eth.wait_for_transaction_receipt(am.functions.revoke(100, key).transact({"from": a0}))
+    assert watcher.poll_once() == 2
+    by_event = {a.event: a for a in got}
+    assert set(by_event) == {"RoleGranted", "RoleRevoked"}
+    assert f"role 100 granted to {key}" in by_event["RoleGranted"].message
+    assert "execution delay 0s" in by_event["RoleGranted"].message

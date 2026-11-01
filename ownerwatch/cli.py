@@ -141,7 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         prober.check_roles(list(dict.fromkeys([*prober.seen.keys(), *extra])))
         if a.roles_from_logs:
             logs_w3 = Web3(Web3.HTTPProvider(a.logs_rpc, request_kwargs={"timeout": 60})) if a.logs_rpc else None
-            for x in a.addresses:
+            ams = [n.address for n in prober.seen.values() if n.kind == "access-manager" and n.address not in a.addresses]
+            for x in [*a.addresses, *ams]:
                 try:
                     prober.role_history(x, a.from_block, logs_w3, log=lambda m: print(m, file=sys.stderr))
                 except Exception as e:  # noqa: BLE001

@@ -247,3 +247,45 @@ contract MultisigLike {
         o[0] = address(0x1001); o[1] = address(0x1002); o[2] = address(0x1003);
     }
 }
+
+// OpenZeppelin AccessManager surface: role ids, execution delays, role admins, function roles.
+contract AccessManagerLike {
+    event RoleGranted(uint64 indexed roleId, address indexed account, uint32 delay, uint48 since, bool newMember);
+    event RoleRevoked(uint64 indexed roleId, address indexed account);
+    mapping(uint64 => mapping(address => uint32)) internal delayOf;
+    mapping(uint64 => mapping(address => bool)) internal member;
+    mapping(uint64 => uint64) public getRoleAdmin;
+    mapping(address => mapping(bytes4 => uint64)) internal fnRole;
+    function ADMIN_ROLE() external pure returns (uint64) { return 0; }
+    function PUBLIC_ROLE() external pure returns (uint64) { return type(uint64).max; }
+    function hasRole(uint64 r, address a) external view returns (bool, uint32) { return (member[r][a], delayOf[r][a]); }
+    function getRoleGuardian(uint64) external pure returns (uint64) { return 0; }
+    function getTargetFunctionRole(address t, bytes4 s) external view returns (uint64) { return fnRole[t][s]; }
+    function grant(uint64 r, address a, uint32 d) external {
+        member[r][a] = true; delayOf[r][a] = d;
+        emit RoleGranted(r, a, d, uint48(block.timestamp), true);
+    }
+    function revoke(uint64 r, address a) external { member[r][a] = false; emit RoleRevoked(r, a); }
+    function setAdmin(uint64 r, uint64 admin) external { getRoleAdmin[r] = admin; }
+    function setFn(address t, bytes4 s, uint64 r) external { fnRole[t][s] = r; }
+}
+
+contract ManagedLike {
+    address public authority;
+    function setAuthority(address a) external { authority = a; }
+    function pause() external {}
+}
+
+contract CloneMaker {
+    address public last;
+    function clone(address impl) external returns (address c) {
+        assembly {
+            let ptr := mload(0x40)
+            mstore(ptr, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)
+            mstore(add(ptr, 0x14), shl(0x60, impl))
+            mstore(add(ptr, 0x28), 0x5af43d82803e903d91602b57fd5bf30000000000000000000000000000000000)
+            c := create(0, ptr, 0x37)
+        }
+        last = c;
+    }
+}

@@ -286,3 +286,55 @@ def test_role_candidates_find_holders_without_becoming_targets(anvil, artifacts,
     out = capsys.readouterr().out
     assert f"DEFAULT_ADMIN_ROLE held by 2-of-3 Safe {safe.address} with no timelock" in out
     assert unrelated.address[:6] not in out
+
+
+def _am_setup(w3, artifacts, delay=0):  # noqa: F811
+    am = _deploy(w3, *artifacts["AccessManagerLike"])
+    impl = _deploy(w3, *artifacts["ManagedLike"])
+    maker = _deploy(w3, *artifacts["CloneMaker"])
+    a0, key = w3.eth.accounts[0], w3.eth.accounts[1]
+    w3.eth.wait_for_transaction_receipt(maker.functions.clone(impl.address).transact({"from": a0}))
+    clone = w3.eth.contract(address=maker.functions.last().call(), abi=artifacts["ManagedLike"][0])
+    clone.functions.setAuthority(am.address).transact({"from": a0})
+    pause = bytes(w3.keccak(text="pause()")[:4])
+    am.functions.setFn(clone.address, pause, 200).transact({"from": a0})
+    am.functions.setAdmin(200, 100).transact({"from": a0})
+    w3.eth.wait_for_transaction_receipt(am.functions.grant(100, key, delay).transact({"from": a0}))
+    return am, impl, clone, key
+
+
+def test_access_manager_role_on_clone(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    am, impl, clone, key = _am_setup(w3, artifacts)
+    p = Prober(w3)
+    n = p.probe(clone.address)
+    assert n.clone_of == impl.address and n.authority == am.address
+    m = p.seen[am.address]
+    assert m.kind == "access-manager"
+    p.check_roles([key])
+    assert m.am_roles[100] == [(key, 0)] and m.am_role_admin[200] == 100
+    assert any("role 100 held by EOA" in x and "roles 200 (calls pause)" in x for x in n.notes)
+    md = markdown_report(p, "Test", "anvil", [n])
+    assert "EIP-1167 clone of" in md and "role 100:" in md and "-> " in md
+
+
+def test_access_manager_delay_is_not_a_finding(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    am, _, clone, key = _am_setup(w3, artifacts, delay=86400)
+    p = Prober(w3)
+    p.probe(clone.address)
+    p.check_roles([key])
+    assert p.seen[am.address].am_roles[100] == [(key, 86400)]
+    assert not any("role 100" in x for x in p.seen[am.address].notes)
+
+
+def test_access_manager_roles_from_logs(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    am, _, clone, key = _am_setup(w3, artifacts)
+    w3.eth.wait_for_transaction_receipt(am.functions.grant(5, w3.eth.accounts[2], 0).transact({"from": w3.eth.accounts[0]}))
+    w3.eth.wait_for_transaction_receipt(am.functions.revoke(5, w3.eth.accounts[2]).transact({"from": w3.eth.accounts[0]}))
+    p = Prober(w3)
+    p.probe(clone.address)
+    out = p.role_history(am.address, from_block=0)
+    assert out == {"role 100": [key]}
+    assert any("role 100 held by EOA" in x for x in p.seen[clone.address].notes)
