@@ -338,3 +338,29 @@ def test_access_manager_roles_from_logs(anvil, artifacts):  # noqa: F811
     out = p.role_history(am.address, from_block=0)
     assert out == {"role 100": [key]}
     assert any("role 100 held by EOA" in x for x in p.seen[clone.address].notes)
+
+
+def test_named_custody_getters_and_7702_owner(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    vault = _deploy(w3, *artifacts["FundsLike"])
+    holder, curator = w3.eth.accounts[2], w3.eth.accounts[3]
+    w3.eth.wait_for_transaction_receipt(vault.functions.set(holder, curator).transact({"from": w3.eth.accounts[0]}))
+    # the deployer (owner) gets an EIP-7702 delegation: still an EOA controlled by one key
+    delegate = vault.address
+    w3.provider.make_request("anvil_setCode", [w3.eth.accounts[0], "0xef0100" + delegate[2:].lower()])
+    p = Prober(w3)
+    n = p.probe(vault.address)
+    owner = p.seen[w3.eth.accounts[0]]
+    assert owner.kind == "eoa" and owner.delegate == delegate
+    assert any(x.startswith("owner() is an EOA") and "EIP-7702 delegated" in x for x in n.notes)
+    assert n.named["fundsHolder() (receives deposits)"] == holder and n.named["curator()"] == curator
+    assert any(x.startswith("fundsHolder() (receives deposits) is an EOA") for x in n.notes)
+    assert any(x.startswith("curator() is an EOA") for x in n.notes)
+    assert "fundsHolder(): " in markdown_report(p, "T", "anvil", [n])
+
+
+def test_delay_parameter_is_not_a_timelock(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    c = _deploy(w3, *artifacts["DelayParamLike"])
+    n = Prober(w3).probe(c.address)
+    assert n.kind == "contract" and n.delay is None

@@ -289,3 +289,17 @@ contract CloneMaker {
         last = c;
     }
 }
+
+contract FundsLike {
+    address public owner;
+    address public fundsHolder;
+    address public curator;
+    constructor() { owner = msg.sender; }
+    function set(address f, address c) external { fundsHolder = f; curator = c; }
+}
+
+contract DelayParamLike {
+    address public owner;
+    uint256 public delay = 60;      // a price-update parameter, not a timelock
+    constructor() { owner = msg.sender; }
+}

@@ -40,6 +40,15 @@ SKY_PAUSE_PROXY = "0xBE8E3e3618f7474F8cB1d074A26afFef007E98FB"
 EIP1167_PREFIX = bytes.fromhex("363d3d373d3d3d363d73")
 EIP1167_SUFFIX = bytes.fromhex("5af43d82803e903d91602b57fd5bf3")
 AM_PUBLIC_ROLE = 2**64 - 1
+EIP7702_PREFIX = bytes.fromhex("ef0100")
+# Operational keys that are not upgrade or ownership paths but control assets or pricing directly
+NAMED_GETTERS = {
+    "fundsHolder()": "fundsHolder() (receives deposits)",
+    "safe()": "safe() (holds the vault's assets)",
+    "valuationManager()": "valuationManager() (sets the NAV)",
+    "curator()": "curator()",
+    "guardian()": "guardian()",
+}
 # Selectors checked on AccessManaged targets when no verified ABI is available
 AM_FALLBACK_FNS = ["upgradeToAndCall(address,bytes)", "setAuthority(address)", "pause()", "unpause()",
                    "mint(address,uint256)", "transferOwnership(address)"]
@@ -120,6 +129,8 @@ class Node:
     emergency: str | None = None        # emergency() (Curve)
     wards: list[str] = field(default_factory=list)   # DSAuth/Maker wards among the addresses tested
     open_executor: bool | None = None
+    delegate: str | None = None         # EIP-7702: an EOA whose code delegates to this contract
+    named: dict[str, str] = field(default_factory=dict)   # NAMED_GETTERS label -> address
     clone_of: str | None = None         # EIP-1167 minimal proxy: fixed implementation, not upgradeable by itself
     authority: str | None = None        # OpenZeppelin AccessManaged: the AccessManager that gates its functions
     am_roles: dict[int, list[tuple[str, int]]] = field(default_factory=dict)   # AccessManager: role id -> [(holder, execution delay)]
@@ -654,6 +665,10 @@ class Prober:
         self.seen[address] = n
         code = bytes(self.w3.eth.get_code(address))
         n.code_size = len(code)
+        if n.code_size == 23 and code[:3] == EIP7702_PREFIX:
+            n.kind = "eoa"     # an EOA with an EIP-7702 delegation: the private key still controls it
+            n.delegate = Web3.to_checksum_address("0x" + code[3:].hex())
+            return n
         if n.code_size == 0:
             n.kind = "eoa"
             return n
@@ -698,7 +713,7 @@ class Prober:
             n.delay = legacy
             n.admin = legacy_admin
         elif (legacy is not None and n.kind == "unknown" and not n.implementation and not n.beacon
-              and legacy <= 90 * 86400 and self._addr(address, "owner()")):
+              and 3600 <= legacy <= 90 * 86400 and self._addr(address, "owner()")):
             n.kind = "timelock"                   # custom Ownable timelock: delay() + owner()
             n.delay = legacy
         if n.kind == "unknown" and self._is_access_manager(address):
@@ -757,7 +772,8 @@ class Prober:
                 c = self.probe(ctl, depth + 1)
                 what = " and ".join(roles)
                 if c.kind == "eoa":
-                    n.notes.append(f"{what} is an EOA {ctl}: one private key, no timelock, no multisig")
+                    n.notes.append(f"{what} is an EOA {ctl}" + (f" (EIP-7702 delegated to {c.delegate})" if c.delegate else "")
+                                   + ": one private key, no timelock, no multisig")
                 elif c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"{what} is a 1-of-N Safe {ctl}")
                 elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract") and not self._timelocked(c):
@@ -766,6 +782,17 @@ class Prober:
                                        f"(upgrades are separate, via {n.proxy_admin})")
                     else:
                         n.notes.append(f"{what} is {ctl} with no recognised timelock in between")
+            if n.kind in ("proxy", "contract"):
+                for sig, label in NAMED_GETTERS.items():
+                    a = self._addr(address, sig)
+                    if not a or a == address or a in (n.owner, n.proxy_admin, n.admin):
+                        continue
+                    n.named[label] = a
+                    c = self.probe(a, depth + 1)
+                    if c.kind == "eoa":
+                        n.notes.append(f"{label} is an EOA {a}" + (f" (EIP-7702 delegated to {c.delegate})" if c.delegate else ""))
+                    elif c.kind == "safe" and c.safe_threshold == 1:
+                        n.notes.append(f"{label} is a 1-of-N Safe {a}")
         return n
 
 
@@ -792,6 +819,10 @@ def describe(n: Node) -> str:
         bits.append(f"clone_of={n.clone_of}")
     if n.authority:
         bits.append(f"authority={n.authority}")
+    if n.delegate:
+        bits.append(f"7702-delegate={n.delegate}")
+    for label, a in n.named.items():
+        bits.append(f"{label.split(' ')[0]}={a}")
     if n.safe_threshold is not None:
         bits.append(f"safe {n.safe_threshold}-of-{len(n.safe_owners)}")
     if n.delay is not None:
@@ -859,6 +890,8 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
             detail.append(f"EIP-1167 clone of {short(n.clone_of)} (not upgradeable)")
         if n.authority:
             detail.append(f"AccessManager {short(n.authority)}")
+        for label, a in n.named.items():
+            detail.append(f"{label.split(' ')[0]}: {short(a)}")
         for r, holders in sorted(n.am_roles.items()):
             name = "ADMIN_ROLE (0)" if r == 0 else f"role {r}"
             detail.append(f"{name}: " + ", ".join(f"{short(h)}" + (f" ({d}s delay)" if d else "") for h, d in holders))

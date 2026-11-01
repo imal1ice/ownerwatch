@@ -52,7 +52,7 @@ def artifacts():
                  "AaveProviderLike", "ExecutorLike", "PayloadsControllerLike", "RoleLog",
                  "AragonAppLike", "EnumerableAuthorizer", "VaultLike", "FactoryUpgradeAdminLike", "CurveAdminLike",
                  "DSPauseLike", "PauseProxyLike", "WardsLike", "MultisigLike",
-                 "AccessManagerLike", "ManagedLike", "CloneMaker"):
+                 "AccessManagerLike", "ManagedLike", "CloneMaker", "FundsLike", "DelayParamLike"):
         art = json.loads((FIXTURES / "out" / "Admin.sol" / f"{name}.json").read_text())
         out[name] = (art["abi"], art["bytecode"]["object"])
     return out

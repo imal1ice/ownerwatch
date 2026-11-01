@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- probe: an EIP-7702 delegated account is classified as an EOA (one private key still controls it) and its delegate is shown; before, its 23-byte code made it look like a contract with "no recognised timelock".
+- probe: operational keys that control assets or pricing without being an owner are read and classified: `fundsHolder()`, Lagoon `safe()` and `valuationManager()`, `curator()`, `guardian()`. An EOA or 1-of-N Safe in one of these seats is a finding.
+- probe: the Ownable-timelock heuristic (`delay()` + `owner()`) now needs a delay of at least one hour, so a price-update parameter named `delay()` is no longer reported as a "0h timelock".
 
 ## 0.10.0 - 2026-11-01
 - probe: OpenZeppelin AccessManager. A contract's `authority()` is followed to its AccessManager; the roles guarding the target's functions (from its verified ABI) and every role admin above them are mapped, and holders are found among probed addresses, `--role-candidates` and the signers of every Safe found, iterating as new holders appear, or with `--roles-from-logs` by replaying RoleGranted/RoleRevoked and confirming with hasRole. A single key or 1-of-N Safe holding ADMIN_ROLE, a role-admin role or a function role with no execution delay is a finding, written as what it unlocks ("can grant itself or others roles 200 (calls execute)").
