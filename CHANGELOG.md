@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 0.10.1 - 2026-11-01
 - probe: an EIP-7702 delegated account is classified as an EOA (one private key still controls it) and its delegate is shown; before, its 23-byte code made it look like a contract with "no recognised timelock".
 - probe: operational keys that control assets or pricing without being an owner are read and classified: `fundsHolder()`, Lagoon `safe()` and `valuationManager()`, `curator()`, `guardian()`. An EOA or 1-of-N Safe in one of these seats is a finding.
 - probe: the Ownable-timelock heuristic (`delay()` + `owner()`) now needs a delay of at least one hour, so a price-update parameter named `delay()` is no longer reported as a "0h timelock".
