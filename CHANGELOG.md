@@ -1,9 +1,9 @@
 # Changelog
 
 ## Unreleased
+- README: "Support the project" section removed with FUNDING.json and .github/FUNDING.yml (no donation address or Drips link).
 
 ## 0.9.2 - 2026-10-29
-- README: "Support the project" section removed with FUNDING.json and .github/FUNDING.yml (no donation address or Drips link).
 - probe: the report and config chain name is inferred from the RPC chain id when `--chain-name` is not given. Before, it defaulted to "ethereum", so an L2 report run without the flag was titled "on ethereum".
 - probe: `--role-candidates` tests extra addresses (a protocol's Safes and keys from its docs or other chains) for AccessControl roles without probing them as targets; a role holder found by enumeration or by a candidate is classified before its finding is written.
 - README: services without prices or a payment wallet (terms are shared before anything is paid); the hosted tier is described as operator-neutral software; dead Giveth link removed.
