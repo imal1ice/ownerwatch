@@ -7,6 +7,10 @@ import logging
 import sys
 from pathlib import Path
 
+import requests
+from web3 import Web3
+from web3.exceptions import Web3Exception
+
 from . import __version__
 from .alerts import Dispatcher, redact
 from .config import load_all
@@ -81,15 +85,20 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
 
     if a.cmd == "disclosure":
-        from web3 import Web3
         from .disclosure import Checker, draft, render
-        w3 = Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30}))
-        logs_w3 = Web3(Web3.HTTPProvider(a.logs_rpc, request_kwargs={"timeout": 60})) if a.logs_rpc else None
+        from .probe import make_w3
+        w3 = make_w3(a.rpc)
+        logs_w3 = make_w3(a.logs_rpc, 60) if a.logs_rpc else None
         opts = dict(roles_from_logs=a.roles_from_logs, logs_w3=logs_w3, from_block=a.from_block)
-        if a.dcmd == "draft":
-            print(json.dumps(draft(w3, a.addresses, a.name, a.block, **opts), indent=2))
-            return 0
-        report = Checker(w3, a.block, **opts).check(json.loads(Path(a.file).read_text()))
+        try:
+            if a.dcmd == "draft":
+                print(json.dumps(draft(w3, a.addresses, a.name, a.block, **opts), indent=2))
+                return 0
+            report = Checker(w3, a.block, **opts).check(json.loads(Path(a.file).read_text()))
+        except (RuntimeError, ValueError, OSError, requests.RequestException, Web3Exception) as e:
+            # a failed read proves nothing either way: exit 2 keeps it apart from exit 1, a real mismatch
+            print(f"error: could not read chain state: {redact(e)}", file=sys.stderr)
+            return 2
         print(json.dumps(report, indent=2) if a.json else render(report))
         return 1 if report["summary"]["mismatch"] or report["summary"]["undisclosed"] else 0
 
@@ -104,64 +113,83 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if a.cmd == "probe":
-        from web3 import Web3
-        from .probe import Prober, chain_name_for, describe, markdown_report, suggest_config
-        if a.config:
-            # one report per chain, addresses taken from the config
-            cfgs_ = load_all(a.config)
-            for cfg in cfgs_:
-                # --rpc overrides a single-chain config; multi-chain configs use probe_rpc_url per chain
-                rpc = a.rpc if (a.rpc and len(cfgs_) == 1) else (cfg.probe_rpc_url or cfg.rpc_url)
-                prober = Prober(Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 30})))
-                addrs = [c.address for c in cfg.contracts] + [s_.address for s_ in cfg.safes]
-                try:
-                    roots = [prober.probe(x) for x in dict.fromkeys(addrs)]
-                    prober.check_roles(list(prober.seen.keys()))
-                except Exception as e:  # noqa: BLE001  (RPC refused/unreachable; a clean exit beats a traceback in CI)
-                    import requests
-                    if not isinstance(e, (RuntimeError, requests.RequestException)):
-                        raise
-                    print(f"error: {e}\nhint: set probe_rpc_url in the config or pass --rpc", file=sys.stderr)
-                    return 2
-                if a.markdown:
-                    print(markdown_report(prober, a.label, cfg.chain_name, roots))
-                elif a.json:
-                    import json as _json
-                    print(_json.dumps({"chain": cfg.chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()]}, indent=2))
-                else:
-                    print(f"# {cfg.chain_name}")
-                    for n in prober.seen.values():
-                        print(describe(n))
-            return 0
-        if not a.rpc or not a.addresses:
-            p.error("probe needs --rpc and at least one address, or --config")
-        prober = Prober(Web3(Web3.HTTPProvider(a.rpc, request_kwargs={"timeout": 30})))
-        if a.chain_name is None:
-            a.chain_name = chain_name_for(prober.w3.eth.chain_id)
-        roots = [prober.probe(x) for x in a.addresses]
+        from .probe import Prober, chain_name_for, describe, make_w3, markdown_report, suggest_config
+        rc = 0
+
+        def replay(prober, addresses, logs_w3) -> int:
+            """Replay role logs for the targets and every AccessControl contract or AccessManager found above them.
+            A failed replay means the holder list is incomplete: said in the report, and a non-zero exit."""
+            status, done = 0, set()
+            while True:
+                todo = [x for x in [*addresses, *prober.seen] if x not in done and prober.seen[x].kind != "eoa"]
+                if not todo:
+                    return status
+                for x in dict.fromkeys(todo):
+                    done.add(x)
+                    try:
+                        if prober.seen[x].kind == "access-manager" or prober._supports_access_control(x):
+                            prober.role_history(x, a.from_block, logs_w3, log=lambda m: print(m, file=sys.stderr))
+                    except Exception as e:  # noqa: BLE001
+                        print(f"# role history for {x} failed: {redact(e)}", file=sys.stderr)
+                        prober.incomplete.append(f"role history for {x} could not be read, so its holders may be incomplete")
+                        status = 2
+
+        def output(prober, chain_name, roots) -> None:
+            if a.markdown:
+                print(markdown_report(prober, a.label, chain_name, roots))
+            elif a.json:
+                print(json.dumps({"chain": chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()],
+                                  "incomplete": prober.incomplete}, indent=2))
+
         extra = [Web3.to_checksum_address(x) for x in a.role_candidates.replace(" ", ",").split(",") if x]
-        prober.check_roles(list(dict.fromkeys([*prober.seen.keys(), *extra])))
-        if a.roles_from_logs:
-            logs_w3 = Web3(Web3.HTTPProvider(a.logs_rpc, request_kwargs={"timeout": 60})) if a.logs_rpc else None
-            ams = [n.address for n in prober.seen.values() if n.kind == "access-manager" and n.address not in a.addresses]
-            for x in [*a.addresses, *ams]:
-                try:
-                    prober.role_history(x, a.from_block, logs_w3, log=lambda m: print(m, file=sys.stderr))
-                except Exception as e:  # noqa: BLE001
-                    print(f"# role history for {x} failed: {e}", file=sys.stderr)
-        if a.markdown:
-            print(markdown_report(prober, a.label, a.chain_name, roots))
-            return 0
-        if a.json:
-            import json as _json
-            print(_json.dumps({"chain": a.chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()]}, indent=2))
-            return 0
+        try:
+            if a.config:
+                # one report per chain, addresses taken from the config
+                cfgs_ = load_all(a.config)
+                for cfg in cfgs_:
+                    # --rpc overrides a single-chain config; multi-chain configs use probe_rpc_url per chain
+                    rpc = a.rpc if (a.rpc and len(cfgs_) == 1) else (cfg.probe_rpc_url or cfg.rpc_url)
+                    prober = Prober(make_w3(rpc))
+                    name = cfg.chain_name
+                    if a.chain_name and len(cfgs_) == 1:
+                        name = a.chain_name
+                    elif name == "ethereum" and prober.w3.eth.chain_id != 1:    # chain_name left at its default on another chain
+                        name = chain_name_for(prober.w3.eth.chain_id)
+                    addrs = [c.address for c in cfg.contracts] + [s_.address for s_ in cfg.safes]
+                    roots = [prober.probe(x) for x in dict.fromkeys(addrs)]
+                    prober.check_roles(list(dict.fromkeys([*prober.seen.keys(), *extra])))
+                    if a.roles_from_logs:
+                        logs_w3 = make_w3(a.logs_rpc or cfg.rpc_url, 60)
+                        rc = max(rc, replay(prober, list(dict.fromkeys(addrs)), logs_w3))
+                    if a.markdown or a.json:
+                        output(prober, name, roots)
+                    else:
+                        print(f"# {name}")
+                        for n in prober.seen.values():
+                            print(describe(n))
+                return rc
+            if not a.rpc or not a.addresses:
+                p.error("probe needs --rpc and at least one address, or --config")
+            prober = Prober(make_w3(a.rpc))
+            if a.chain_name is None:
+                a.chain_name = chain_name_for(prober.w3.eth.chain_id)
+            roots = [prober.probe(x) for x in a.addresses]
+            prober.check_roles(list(dict.fromkeys([*prober.seen.keys(), *extra])))
+            if a.roles_from_logs:
+                logs_w3 = make_w3(a.logs_rpc, 60) if a.logs_rpc else None
+                rc = replay(prober, [r.address for r in roots], logs_w3)
+        except (RuntimeError, ValueError, OSError, requests.RequestException, Web3Exception) as e:
+            print(f"error: {redact(e)}\nhint: set probe_rpc_url in the config or pass --rpc with an RPC that serves eth_call", file=sys.stderr)
+            return 2
+        if a.markdown or a.json:
+            output(prober, a.chain_name, roots)
+            return rc
         if not a.yaml:
             for n in prober.seen.values():
                 print(describe(n))
             print("\n# suggested config\n")
         print(suggest_config(prober, a.rpc, a.chain_name, a.safe_chain, a.label))
-        return 0
+        return rc
 
     try:
         cfgs = load_all(a.config)
@@ -169,7 +197,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {e}", file=sys.stderr)
         return 2
     if a.cmd == "validate":
-        from web3 import Web3
         from .safe import SafeQueueWatcher
         rc = 0
         for cfg in cfgs:

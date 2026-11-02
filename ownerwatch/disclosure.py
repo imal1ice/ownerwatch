@@ -13,10 +13,10 @@ import json
 
 from web3 import Web3
 
-from .probe import ROLES, Prober
+from .probe import AM_PUBLIC_ROLE, AM_ROLE_PREFIX, ROLES, Prober
 
 NODE_TYPES = {"eoa": "EOA", "safe": "MULTISIG", "timelock": "TIMELOCK", "legacy-timelock": "TIMELOCK",
-              "proxy": "CONTRACT", "contract": "CONTRACT"}
+              "proxy": "CONTRACT", "contract": "CONTRACT", "aragon-app": "CONTRACT", "access-manager": "CONTRACT"}
 # PowerKinds chain state can settle. Anything else is reported as unverifiable, never as ok.
 VERIFIABLE = {"UPGRADE", "OWNERSHIP", "ROLE"}
 
@@ -25,7 +25,7 @@ def manifest_hash(d: dict) -> str:
     """keccak256 of the canonical JSON (sorted keys, no whitespace) with `protocol.manifestHash` left out."""
     body = json.loads(json.dumps(d))
     body.get("protocol", {}).pop("manifestHash", None)
-    return "0x" + Web3.keccak(text=json.dumps(body, sort_keys=True, separators=(",", ":"))).hex().removeprefix("0x")
+    return "0x" + Web3.keccak(text=json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)).hex().removeprefix("0x")
 
 
 def _a(x: str | None) -> str | None:
@@ -61,6 +61,37 @@ class Checker:
 
     def _role_label(self, addr: str, h: str) -> str:
         return {v: k for k, v in self._role_names(addr).items()}.get(h, h)
+
+    def _am_of(self, t):
+        """The AccessManager a contract answers to: itself, or its authority()."""
+        if t.kind == "access-manager":
+            return t
+        return self._node(t.authority) if t.authority else None
+
+    def observed_am_roles(self, t) -> dict[int, list[str]]:
+        """AccessManager role id -> holders that reach this contract: every role on the manager itself; on a managed
+        target, ADMIN_ROLE and the roles guarding its functions. An AccessManager cannot enumerate members, so
+        only the log replay is complete."""
+        m = self._am_of(t)
+        if m is None:
+            return {}
+        if self.roles_from_logs and m.address not in self.prober.replayed:
+            self.prober.role_history(m.address, self.from_block, self.logs_w3, to_block=self.block)
+        return {r: [h for h, _ in holders] for r, holders in m.am_roles.items()
+                if t is m or r == 0 or any(g.endswith(t.address) for g in m.am_gates.get(r, []))}
+
+    @staticmethod
+    def _am_role_id(role: str, target_is_manager: bool) -> int | None:
+        if role.startswith(AM_ROLE_PREFIX):
+            return int(role[len(AM_ROLE_PREFIX):])
+        if target_is_manager:
+            if role == "ADMIN_ROLE":
+                return 0
+            if role == "PUBLIC_ROLE":
+                return AM_PUBLIC_ROLE
+            if role.removeprefix("role ").isdigit():
+                return int(role.removeprefix("role "))
+        return None
 
     def observed_roles(self, t) -> dict[str, list[str]]:
         """Role hash -> holders at the pinned block. From the log replay when enabled (each holder confirmed
@@ -134,7 +165,8 @@ class Checker:
             addr = _a(c["address"])
             obs = self._node(addr)
             if obs.kind == "eoa":
-                self._add("component", cid, "mismatch", "no code at the address", c["address"], None)
+                self._add("component", cid, "mismatch", "an EIP-7702 account, not a contract" if obs.delegate else "no code at the address",
+                          c["address"], None)
                 continue
             upgradeable = bool(obs.implementation or obs.beacon)
             problems = []
@@ -142,9 +174,13 @@ class Checker:
                 problems.append(f"upgradeable declared {c['upgradeable']}, on-chain {upgradeable}")
             if c.get("implementation") and _a(c["implementation"]) != obs.implementation:
                 problems.append(f"implementation declared {c['implementation']}, on-chain {obs.implementation}")
-            if c.get("adminNodeId") and upgradeable and bound(c["adminNodeId"]) != obs.proxy_admin:
+            if c.get("adminNodeId") and upgradeable and obs.proxy_admin and bound(c["adminNodeId"]) != obs.proxy_admin:
                 problems.append(f"admin declared {c['adminNodeId']} ({bound(c['adminNodeId'])}), on-chain upgrade admin {obs.proxy_admin}")
-            self._add("component", cid, "mismatch" if problems else "ok", "; ".join(problems) or "address, upgradeability and admin match",
+            # a UUPS proxy keeps its upgrade authority in the implementation's code, which no slot names
+            unnamed = upgradeable and not obs.proxy_admin
+            self._add("component", cid, "mismatch" if problems else ("unverifiable" if unnamed else "ok"),
+                      "; ".join(problems) or ("upgradeable, but its upgrade authority is not readable from state (UUPS)" if unnamed
+                                              else "address, upgradeability and admin match"),
                       {k: c.get(k) for k in ("upgradeable", "implementation", "adminNodeId")},
                       {"upgradeable": upgradeable, "implementation": obs.implementation, "upgradeAdmin": obs.proxy_admin})
 
@@ -168,16 +204,39 @@ class Checker:
                           f"{kind or 'no kind'} is not settled by chain state" if comp else "target is not a declared component")
                 continue
             target = self._node(_a(comp["address"]))
+            if not ctl:     # nothing to compare: "ok" here would vouch for a controller nobody can identify
+                self._add("power", pid, "unverifiable", f"controller {p.get('controllerNodeId')} has no address binding")
+                continue
             if kind == "UPGRADE":
+                upgradeable = bool(target.implementation or target.beacon)
+                if upgradeable and not target.proxy_admin:
+                    self._add("power", pid, "unverifiable", "upgrade authority is in the implementation's code (UUPS), which no slot names")
+                    continue
                 obs, key = target.proxy_admin, ("UPGRADE", target.address, None)
-                ok = ctl == obs if (target.implementation or target.beacon) else False
+                ok = ctl == obs if upgradeable else False
             elif kind == "OWNERSHIP":
                 obs, key = target.owner, ("OWNERSHIP", target.address, None)
                 ok = ctl == obs
             else:
-                h = self._role_hash(target.address, p.get("role") or "DEFAULT_ADMIN_ROLE")
-                key = ("ROLE", target.address, h)
-                obs = self.prober._has_role(target.address, bytes.fromhex(h[2:]), ctl) if ctl else None
+                role = p.get("role") or "DEFAULT_ADMIN_ROLE"
+                manager = self._am_of(target)
+                rid = self._am_role_id(role, target.kind == "access-manager")
+                if manager is not None and rid is not None:
+                    res = self.prober._am_has_role(manager.address, [(rid, ctl)])[0]
+                    obs, key = bool(res and res[0]), ("ROLE", target.address, f"{AM_ROLE_PREFIX}{rid}")
+                elif target.kind == "access-manager":
+                    self._add("power", pid, "unverifiable", f"role {role} is not an AccessManager role id")
+                    continue
+                else:
+                    h = p.get("roleHash") or self._role_hash(target.address, role)
+                    key = ("ROLE", target.address, h)
+                    obs = self.prober._has_role(target.address, bytes.fromhex(h[2:]), ctl)
+                    named = p.get("roleHash") or role.startswith("0x") or role in self._role_names(target.address)
+                    if obs is not True and not named:
+                        # only a guess at the hash from the name, with no ABI to confirm it: a miss proves nothing
+                        declared_keys.add(key + (ctl,))
+                        self._add("power", pid, "unverifiable", f"role {role} could not be resolved to a hash: add roleHash")
+                        continue
                 ok = obs is True
             declared_keys.add(key + (ctl,))
             n_before = len(self.results)
@@ -209,6 +268,8 @@ class Checker:
                 seen.append(("OWNERSHIP", None, t.owner))
             for h, holders in self.observed_roles(t).items():
                 seen += [("ROLE", h, x) for x in holders]
+            for rid, holders in self.observed_am_roles(t).items():
+                seen += [("ROLE", f"{AM_ROLE_PREFIX}{rid}", x) for x in holders]
             for kind, role, holder in seen:
                 if holder and (kind, t.address, role, holder) not in declared_keys:
                     undisclosed.append({"component": cid, "kind": kind, "role": self._role_label(t.address, role) if role else None,
@@ -237,7 +298,7 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, r
 
     def nid(addr: str) -> str:
         n = p.seen[addr]
-        key = f"{NODE_TYPES.get(n.kind, 'CONTRACT').lower()}-{addr[2:8].lower()}"
+        key = f"{NODE_TYPES.get(n.kind, 'CONTRACT').lower()}-{addr[2:].lower()}"   # whole address: vanity prefixes collide
         if key not in nodes:
             nodes[key] = {"nodeId": key, "type": NODE_TYPES.get(n.kind, "CONTRACT"), "address": addr}
             if n.kind == "safe":
@@ -247,7 +308,7 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, r
         return key
 
     for r in roots:
-        cid = f"component-{r.address[2:8].lower()}"
+        cid = f"component-{r.address[2:].lower()}"
         up = bool(r.implementation or r.beacon)
         comp = {"componentId": cid, "address": r.address, "nodeId": nid(r.address), "type": "contract", "upgradeable": up}
         if r.implementation:
@@ -262,8 +323,14 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, r
         for rh, holders in ck.observed_roles(r).items():
             role = ck._role_label(r.address, rh)
             for h in holders:
-                p.seen.get(h) or p.probe(h, depth=2)
-                powers.append({"powerId": f"{role.lower()[:24]}-{cid}-{h[2:8].lower()}", "kind": "ROLE", "role": role,
+                p.seen.get(h) or p.probe(h)
+                # the hash travels with the name, so the check does not depend on a verified ABI being reachable later
+                powers.append({"powerId": f"{role.lower()[:24]}-{cid}-{h[2:].lower()}", "kind": "ROLE", "role": role, "roleHash": rh,
+                               "enabled": True, "target": cid, "controllerNodeId": nid(h)})
+        for rid, holders in ck.observed_am_roles(r).items():
+            for h in holders:
+                p.seen.get(h) or p.probe(h)
+                powers.append({"powerId": f"{AM_ROLE_PREFIX}{rid}-{cid}-{h[2:].lower()}", "kind": "ROLE", "role": f"{AM_ROLE_PREFIX}{rid}",
                                "enabled": True, "target": cid, "controllerNodeId": nid(h)})
         comps.append(comp)
     # the chain above the direct controllers, as edges: who owns or upgrades each controller, up to a few hops
@@ -271,11 +338,11 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, r
     for _ in range(4):
         nxt = []
         for addr in frontier:
-            n = p.seen.get(addr) or p.probe(addr, depth=2)
+            n = p.seen.get(addr) or p.probe(addr)
             for kind, ctl in (("OWNER_OF", n.owner), ("UPGRADE_ADMIN_OF", n.proxy_admin if (n.implementation or n.beacon) else None)):
                 if not ctl or ctl == addr:
                     continue
-                p.seen.get(ctl) or p.probe(ctl, depth=2)
+                p.seen.get(ctl) or p.probe(ctl)
                 known = any(v["address"] == ctl for v in nodes.values())
                 src, dst = nid(ctl), nid(addr)
                 eid = f"{kind.lower()}-{src}-{dst}"

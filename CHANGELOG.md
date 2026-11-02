@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+A full audit of the watcher, the probe and the disclosure checker. The theme: a quiet result must mean nothing happened, never that something failed.
+
+### Watcher
+- Safe 1.4.1 and 1.5.0 index `AddedOwner`, `RemovedOwner`, `EnabledModule`, `DisabledModule`, `ChangedGuard`, `ChangedFallbackHandler` and `ExecutionSuccess/Failure`. These logs matched the catalog and then failed to decode, so signer changes on current Safes produced no alert. They decode now. So does `Upgraded` with the implementation in the data, as USDC's proxy emits it.
+- A log whose topic is in the catalog can no longer vanish: if it will not decode, it alerts raw, at its usual severity. Invalid UTF-8 in a proposal description no longer hides the proposal.
+- Failed deliveries go to an outbox in the state file and are retried every poll, oldest first. 429 responses wait out `Retry-After`. A payload the sink rejects (400, 413, 422) is dropped with an error so it cannot block the rest.
+- The heartbeat pings only after a fully healthy poll: scans, Safe checks and deliveries all worked. Chains sharing one URL ping only when all of them are healthy.
+- `eth_getLogs` ranges shrink to what the RPC accepts and progress is saved per chunk, so a 10-block cap no longer wedges a backlog. A getLogs failure no longer skips Safe queues and native balances. `start_block: latest` is fixed on the first poll, so an outage straight after start loses nothing.
+- A native-only treasury reads the head, not a frozen block. One failing Safe no longer silences the others. Safe state is per chain: state files from earlier versions are read and upgraded.
+- Token `decimals` left out of a config are read from the token. They were assumed to be 18, which hid a 50M USDC transfer.
+- Timelock calls with an empty signature are decoded from their calldata, and tuple signatures keep their arguments. Queued Safe transactions already seen cost no more RPC reads.
+- `run --once` polls every chain and exits 1 if any failed; before, the first dead chain stopped the rest.
+- Webhook, Telegram and RPC secrets no longer reach the logs. Clipped alerts keep their block and transaction. On-chain text is escaped for Slack. Cursor writes are atomic.
+
+### Config and CLI
+- **Stricter configs:** an unknown key, a bad `min_severity`, `start_block`, `max_block_range`, `confirmations` or `poll_interval_seconds`, half a Telegram setup, `min_native_drop: 0` and two chains sharing a state file are now errors. A misspelt `discord_webhok` used to mean a watcher that never alerted anyone.
+- A Safe with no `chain:` uses the config's own chain, not Ethereum's service. Safe chain keys match the live service (`pol`; `matic` still works).
+- `validate` exits 1 when the RPC fails or an address has no code, and also checks tokens, collections and Safes. `test-alert` ignores `min_severity` and exits 1 on a dead sink. `backfill` never posts to webhooks, as documented. `python -m ownerwatch` passes on the exit code.
+
+### Probe
+- **A failed read is not a clean report.** Only a revert means "no such function". Rate limits, pruned state and dead RPCs are retried and then exit 2; a failed role replay says so in the report and exits 2.
+- Beacon proxies: the beacon's owner is the upgrade authority, and the beacon is in the report and the suggested config. A clone of a beacon proxy is upgradeable through that beacon.
+- ZeppelinOS and EIP-1822 proxy slots are read, so USDC and other early proxies are proxies.
+- Controllers are followed to the end of the chain, not two hops, and the result no longer depends on the order of the targets.
+- A getter that returns a bool, a number, a string or a hash no longer invents a key at `0x...01`. Junk in a proxy slot is not a proxy. Catch-all fallbacks no longer crash the Safe check.
+- Role replay covers every AccessControl contract found, not only the targets, and reports every powerful role, not only `DEFAULT_ADMIN_ROLE`. A zero-valued getter like `merkleRoot()` no longer renames `DEFAULT_ADMIN_ROLE`. An EOA proposer on a timelock is a finding.
+- Safe modules are read and reported: a module executes without the signers.
+- AccessManager: an implementation's ABI is used behind a verified proxy; contracts the manager owns count as targets; replay also reads guards from `TargetFunctionRoleUpdated`. New findings: a sensitive function or a role admin open to `PUBLIC_ROLE`, a short execution delay (any delay used to hide the holder), a pending grant. Claims are now true: no `calls deposit` from selectors nobody configured, grant and guard delays are stated, closed targets have no callers, a role only reaches the targets it guards.
+- `delay()`, `getDelay()` and `minDelay()` make a timelock only with timelock functions behind them, so a parameter named `delay` no longer hides the owner's key. Wording fixed: 2-of-4 is half, not fewer than half; 1800s is 30m, not 0h; a timelock with an EOA admin is not "no timelock".
+- `--config` now honours `--roles-from-logs`, `--role-candidates`, `--logs-rpc` and `--chain-name`, and names the chain from its id when `chain_name` was left at its default.
+- Reports gain a **Full facts** block: every control fact with full addresses, one line each. The ownerwatch Action compares it. Owner and pending owner also appear in the table.
+
+### ERC-8241
+- AccessManager roles are drafted, checked and counted for completeness (`accessManager:<id>`). Node kinds `aragon-app` and `access-manager` map to `CONTRACT`, so a real stETH draft checks clean.
+- A UUPS proxy's authority is `unverifiable`, never `ok` or a false mismatch. A power with no bound controller is `unverifiable`, never `ok`.
+- Drafts store `roleHash`, so a check does not depend on Sourcify being up; a name with neither a hash nor an ABI is `unverifiable` when it misses. Node ids use whole addresses, since vanity prefixes collided. The manifest hash is over the text as written, for non-ASCII names too.
+- `check` exits 2 when the chain cannot be read, and blocks with long `extraData` no longer crash it.
+
+### Hosted
+- A customer's YAML cannot write outside its state directory, write files, or reach private networks and cloud metadata. A typo in a running customer's config keeps the old watcher running. Stop requests are honoured during catch-up.
+- `Subscriptions.sol`: adding chains to an active subscription pays for them over the time left, and reducing them waits for expiry. Before, a one-period renewal changed the chain count for the whole remaining term.
+
 ## 0.10.1 - 2026-11-01
 - probe: an EIP-7702 delegated account is classified as an EOA (one private key still controls it) and its delegate is shown; before, its 23-byte code made it look like a contract with "no recognised timelock".
 - probe: operational keys that control assets or pricing without being an owner are read and classified: `fundsHolder()`, Lagoon `safe()` and `valuationManager()`, `curator()`, `guardian()`. An EOA or 1-of-N Safe in one of these seats is a finding.

@@ -6,6 +6,7 @@ import os
 import time
 from pathlib import Path
 
+import requests
 from eth_abi import decoding, encoding
 from eth_abi.codec import ABICodec
 from eth_abi.registry import BaseEquals, registry as _default_registry
@@ -68,7 +69,10 @@ class Watcher:
     def __init__(self, cfg: Config, dispatcher: Dispatcher, w3: Web3 | None = None):
         self.cfg = cfg
         self.dispatcher = dispatcher
-        self.w3 = w3 or Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 30}))
+        if w3 is None:
+            from .probe import make_w3     # local import: probe imports alerts, as this module does
+            w3 = make_w3(cfg.rpc_url)
+        self.w3 = w3
         self.labels = cfg.labels()
         try:
             self.chain_id = self.w3.eth.chain_id
@@ -158,7 +162,8 @@ class Watcher:
             try:
                 n += self._scan(start, end)
             except Exception as e:  # noqa: BLE001
-                if end == start:
+                if end == start or isinstance(e, requests.ConnectionError):
+                    self._chunk = self.cfg.max_block_range   # the RPC is down, not picky: the size learned so far means nothing
                     raise
                 self._chunk = max((end - start + 1) // 2, 1)
                 self._chunk_ok = 0

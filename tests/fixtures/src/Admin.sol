@@ -105,12 +105,14 @@ contract Token {
 /// Solady Timelock shape: minDelay(), no admin(), no owner().
 contract SoladyTimelockLike {
     function minDelay() external pure returns (uint256) { return 86400; }
+    function propose(bytes32, bytes calldata, uint256) external {}
 }
 
 /// Custom Ownable timelock shape (Noon): delay() + owner(), no admin().
 contract OwnedTimelockLike {
     address public owner = msg.sender;
     function delay() external pure returns (uint256) { return 172800; }
+    function MIN_DELAY() external pure returns (uint256) { return 3600; }
 }
 
 /// Factory-deployed ERC-1967 proxy (Solady ERC1967Factory shape): implementation slot set,
@@ -121,7 +123,7 @@ contract FactoryProxy {
         factory = msg.sender;
         assembly { sstore(0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc, impl) }
     }
-    function owner() external pure returns (address) { return address(0xBEEF); }
+    function owner() external pure returns (address) { return address(uint160(uint256(keccak256("owner")))); }
     function upgrade(address impl) external {
         require(msg.sender == factory, "only factory");
         assembly { sstore(0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc, impl) }
@@ -202,7 +204,7 @@ contract RoleLog {
 // AccessControl authorizer, a factory with upgradeAdmin() (Euler), a Curve-style admin with dao()/emergency(),
 // and Maker/Sky wards with a DSPause-like timelock behind the pause proxy (Spark).
 contract AragonAppLike {
-    address public kernel = address(0xA1);
+    address public kernel = address(uint160(uint256(keccak256("kernel"))));
     function appId() external pure returns (bytes32) { return keccak256("lido"); }
 }
 contract EnumerableAuthorizer {
@@ -228,7 +230,7 @@ contract CurveAdminLike {
 }
 contract DSPauseLike {
     function delay() external pure returns (uint256) { return 172800; }
-    function authority() external pure returns (address) { return address(0xC41EF); }
+    function authority() external pure returns (address) { return address(uint160(uint256(keccak256("chief")))); }
     function plans(bytes32) external pure returns (bool) { return false; }
 }
 contract PauseProxyLike {
@@ -252,6 +254,11 @@ contract MultisigLike {
 contract AccessManagerLike {
     event RoleGranted(uint64 indexed roleId, address indexed account, uint32 delay, uint48 since, bool newMember);
     event RoleRevoked(uint64 indexed roleId, address indexed account);
+    event TargetFunctionRoleUpdated(address indexed target, bytes4 selector, uint64 indexed roleId);
+    mapping(address => bool) public isTargetClosed;
+    mapping(address => uint32) public getTargetAdminDelay;
+    mapping(uint64 => uint32) public getRoleGrantDelay;
+    mapping(uint64 => mapping(address => uint48)) internal pendingSince;
     mapping(uint64 => mapping(address => uint32)) internal delayOf;
     mapping(uint64 => mapping(address => bool)) internal member;
     mapping(uint64 => uint64) public getRoleAdmin;
@@ -267,7 +274,17 @@ contract AccessManagerLike {
     }
     function revoke(uint64 r, address a) external { member[r][a] = false; emit RoleRevoked(r, a); }
     function setAdmin(uint64 r, uint64 admin) external { getRoleAdmin[r] = admin; }
-    function setFn(address t, bytes4 s, uint64 r) external { fnRole[t][s] = r; }
+    function setFn(address t, bytes4 s, uint64 r) external { fnRole[t][s] = r; emit TargetFunctionRoleUpdated(t, s, r); }
+    function close(address t) external { isTargetClosed[t] = true; }
+    function setTargetDelay(address t, uint32 d) external { getTargetAdminDelay[t] = d; }
+    function setGrantDelay(uint64 r, uint32 d) external { getRoleGrantDelay[r] = d; }
+    function grantLater(uint64 r, address a, uint48 since) external {
+        pendingSince[r][a] = since;
+        emit RoleGranted(r, a, 0, since, true);
+    }
+    function getAccess(uint64 r, address a) external view returns (uint48, uint32, uint32, uint48) {
+        return (pendingSince[r][a], delayOf[r][a], 0, 0);
+    }
 }
 
 contract ManagedLike {
@@ -302,4 +319,61 @@ contract DelayParamLike {
     address public owner;
     uint256 public delay = 60;      // a price-update parameter, not a timelock
     constructor() { owner = msg.sender; }
+}
+
+/// Getters with an address-looking name that do not return an address.
+contract JunkGetters {
+    function emergency() external pure returns (bool) { return true; }
+    function guardian() external pure returns (uint256) { return 86400; }
+    function curator() external pure returns (string memory) { return "x"; }
+    function owner() external pure returns (bytes32) { return keccak256("not an address"); }
+}
+
+/// Answers every call with the same 96 bytes, as some proxies and diamonds do.
+contract CatchAll {
+    fallback() external {
+        assembly {
+            mstore(0, 1)
+            mstore(32, 0xffffffffffffffff)
+            mstore(64, 1)
+            return(0, 96)
+        }
+    }
+}
+
+contract SettableOwner {
+    address public owner;
+    constructor() { owner = msg.sender; }
+    function setOwner(address a) external { owner = a; }
+}
+
+contract SafeWithModule {
+    address[] internal mods;
+    function getThreshold() external pure returns (uint256) { return 2; }
+    function getOwners() external pure returns (address[] memory o) {
+        o = new address[](4);
+        o[0] = address(uint160(uint256(keccak256("s0")))); o[1] = address(uint160(uint256(keccak256("s1"))));
+        o[2] = address(uint160(uint256(keccak256("s2")))); o[3] = address(uint160(uint256(keccak256("s3"))));
+    }
+    function addModule(address m) external { mods.push(m); }
+    function getModulesPaginated(address, uint256) external view returns (address[] memory, address) { return (mods, address(1)); }
+}
+
+contract ProposerTimelock {
+    bytes32 public constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
+    mapping(bytes32 => mapping(address => bool)) internal r;
+    function getMinDelay() external pure returns (uint256) { return 172800; }
+    function give(bytes32 role, address a) external { r[role][a] = true; }
+    function hasRole(bytes32 role, address a) external view returns (bool) { return r[role][a]; }
+}
+
+contract VaultWithSafe {
+    address public safe;
+    function totalAssets() external pure returns (uint256) { return 1; }
+    function set(address a) external { safe = a; }
+}
+
+contract ModuleWithSafe {
+    address public safe;
+    function set(address a) external { safe = a; }
 }

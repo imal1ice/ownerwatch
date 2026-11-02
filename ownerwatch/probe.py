@@ -3,17 +3,30 @@ owners and threshold, timelock delay. Classifies each controlling address
 and suggests an ownerwatch config. Read-only; works on any EVM chain."""
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass, field
 
+import requests
 import yaml
+from eth_abi import decode as abi_decode
 from web3 import Web3
+from web3.exceptions import ContractLogicError
+from web3.middleware import ExtraDataToPOAMiddleware
 
+from . import __version__
+from .alerts import redact
 from .events import _norm, topic0
 
 IMPL_SLOT = int("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", 16)
 ADMIN_SLOT = int("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103", 16)
 BEACON_SLOT = int("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50", 16)
+# Older layouts still in use: ZeppelinOS (USDC among others) and EIP-1822 UUPS drafts
+LEGACY_IMPL_SLOTS = (int.from_bytes(Web3.keccak(text="org.zeppelinos.proxy.implementation"), "big"),
+                     int.from_bytes(Web3.keccak(text="PROXIABLE"), "big"))
+LEGACY_ADMIN_SLOT = int.from_bytes(Web3.keccak(text="org.zeppelinos.proxy.admin"), "big")
 ZERO = "0x" + "00" * 20
+MAX_NODES = 400     # a bound on how far the walk up the controllers goes, for pathological graphs only
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"   # same address on every major EVM chain
 # Free public RPCs that serve full log history (verified 2026-10-15); used for
 # role replay when no --logs-rpc is given. Ranges are still split adaptively.
@@ -52,6 +65,66 @@ NAMED_GETTERS = {
 # Selectors checked on AccessManaged targets when no verified ABI is available
 AM_FALLBACK_FNS = ["upgradeToAndCall(address,bytes)", "setAuthority(address)", "pause()", "unpause()",
                    "mint(address,uint256)", "transferOwnership(address)"]
+# Functions that must not be open to everyone. A public deposit() is normal, and so are a vault's ERC-4626
+# mint(uint256,address) and withdraw(uint256,address,address); a public upgradeToAndCall() is not.
+AM_SENSITIVE_FN = re.compile(r"^(upgrade|setAuthority|transferOwnership|renounceOwnership|grantRole|revokeRole|setOwner|setImplementation)|^mint\(address,uint256\)$", re.I)
+AM_ROLE_PREFIX = "accessManager:"
+LONG_DELAY = 86400   # an execution or admin delay at least this long leaves time to react; shorter ones are reported
+# delay() or owner() alone do not make a timelock: plenty of contracts have a parameter called delay.
+TIMELOCK_FNS = [
+    "queueTransaction(address,uint256,string,bytes,uint256)", "executeTransaction(address,uint256,string,bytes,uint256)",
+    "cancelTransaction(address,uint256,string,bytes,uint256)", "queuedTransactions(bytes32)", "GRACE_PERIOD()", "getGracePeriod()",
+    "queueTransaction(address,uint256,string,bytes,uint256,bool)", "executeTransaction(address,uint256,string,bytes,uint256,bool)",
+    "isActionQueued(bytes32)", "queue(uint256)", "schedule(address,uint256,bytes,bytes32,bytes32,uint256)",
+    "execute(address,uint256,bytes,bytes32,bytes32)", "propose(bytes,bytes32,bytes32)", "execute(bytes32,bytes)", "getOperationState(bytes32)",
+    "isOperation(bytes32)", "cancel(bytes32)", "propose(bytes32,bytes,uint256)", "operationState(bytes32)", "readyTimestamp(bytes32)",
+    "MIN_DELAY()", "scheduledAt(bytes32)",
+]
+TIMELOCK_FN_NAME = re.compile(r"queue|schedule|propose", re.I)
+# How RPC nodes report a call that reverted or hit bad code. Everything else means the read itself failed.
+_REVERT_WORDS = ("revert", "vm execution", "evm error", "evmerror", "opcode", "out of gas", "not enough gas", "gas required exceeds",
+                 "stack underflow", "stack overflow", "stack limit", "invalid jump", "bad jump", "bad instruction", "execution error", "precompile")
+
+
+class ProbeRpcError(RuntimeError):
+    """A read failed for a reason other than the contract reverting. The report cannot be trusted past this point."""
+
+
+def _is_revert(e: Exception) -> bool:
+    if isinstance(e, ContractLogicError):
+        return True
+    if isinstance(e, (requests.RequestException, OSError)):
+        return False
+    msg = str(e).lower()
+    return any(w in msg for w in _REVERT_WORDS)
+
+
+def _word_addr(word: bytes) -> str | None:
+    """The address in a 32-byte word, or None when the word cannot be one: dirty high bytes (a bytes32 or a hash),
+    or a value so small it is a bool, a count, a duration or a string offset rather than a key."""
+    if len(word) != 32 or word[:12] != bytes(12) or int.from_bytes(word, "big") < 2**64:
+        return None
+    return Web3.to_checksum_address("0x" + word[12:].hex())
+
+
+def _pad(addr: str) -> bytes:
+    return bytes(12) + bytes.fromhex(addr[2:])
+
+
+def _dur(seconds: int) -> str:
+    """A delay in the largest whole units: 1800 -> 30m, 90000 -> 25h."""
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds >= 3600:
+        return f"{seconds // 3600}h {seconds % 3600 // 60}m"
+    return f"{seconds // 60}m" if seconds % 60 == 0 else f"{seconds}s"
+
+
+def make_w3(url: str, timeout: int = 30) -> Web3:
+    """A Web3 client that also reads blocks on chains with long extraData (Polygon, BSC and other PoA chains)."""
+    w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": timeout}))
+    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    return w3
 
 
 def _abi_type(i: dict) -> str:
@@ -120,6 +193,7 @@ class Node:
     admin: str | None = None
     safe_threshold: int | None = None
     safe_owners: list[str] = field(default_factory=list)
+    safe_modules: list[str] = field(default_factory=list)   # modules execute without the signers
     delay: int | None = None
     paused: bool | None = None
     roles: dict[str, list[str]] = field(default_factory=dict)   # role name -> holders found among probed addresses
@@ -136,6 +210,11 @@ class Node:
     am_roles: dict[int, list[tuple[str, int]]] = field(default_factory=dict)   # AccessManager: role id -> [(holder, execution delay)]
     am_role_admin: dict[int, int] = field(default_factory=dict)                # AccessManager: role id -> admin role id
     am_gates: dict[int, list[str]] = field(default_factory=dict)              # AccessManager: role id -> ["fn on 0xTarget"]
+    am_grant_delay: dict[int, int] = field(default_factory=dict)              # AccessManager: role id -> seconds a grant waits
+    am_target_delay: dict[str, int] = field(default_factory=dict)             # AccessManager: target -> seconds a guard change waits
+    am_closed: list[str] = field(default_factory=list)                        # AccessManager: targets closed to every caller
+    am_open: list[str] = field(default_factory=list)                          # AccessManager: sensitive functions open to anyone
+    am_unmapped: list[str] = field(default_factory=list)                      # AccessManager: targets with no verified ABI
     notes: list[str] = field(default_factory=list)
 
 
@@ -143,6 +222,8 @@ class Prober:
     def __init__(self, w3: Web3):
         self.w3 = w3
         self.seen: dict[str, Node] = {}
+        self.replayed: set[str] = set()      # addresses whose role logs were replayed
+        self.incomplete: list[str] = []      # what this report could not cover; printed under Findings
         self._mc = None
         try:
             if len(self.w3.eth.get_code(MULTICALL3)) > 0:
@@ -158,52 +239,42 @@ class Prober:
                 return [bytes(r[1]) if r[0] and r[1] else None for r in res]
             except Exception:  # noqa: BLE001
                 pass
-        out = []
-        for t, d in calls:
-            try:
-                r = self.w3.eth.call({"to": t, "data": d})
-                out.append(bytes(r) if r else None)
-            except Exception:  # noqa: BLE001
-                out.append(None)
-        return out
+        return [self._eth_call({"to": t, "data": d}) for t, d in calls]
 
     # ---- low level ----
+    def _eth_call(self, tx: dict) -> bytes | None:
+        """None when the call reverts or returns nothing: the contract has no such function. A rate limit, pruned
+        state or a dead RPC is a different thing, and reading it as "no such function" would turn a real owner
+        into a clean report. Those are retried, then raised."""
+        for attempt in range(3):
+            try:
+                r = self.w3.eth.call(tx)
+                return bytes(r) if r else None
+            except Exception as e:  # noqa: BLE001
+                if _is_revert(e):
+                    return None
+                if attempt == 2:
+                    raise ProbeRpcError(f"RPC failed eth_call ({redact(e)}); use an RPC that supports reads, e.g. https://eth.drpc.org") from e
+                time.sleep(attempt + 1)
+        return None
+
     def _call(self, addr: str, sig: str) -> bytes | None:
-        try:
-            r = self.w3.eth.call({"to": addr, "data": _sel(sig)})
-            return bytes(r) if r else None
-        except Exception as e:  # noqa: BLE001
-            # a revert means "this contract doesn't have that function"; a transport
-            # error means the RPC is unusable for probing and must not be hidden
-            if type(e).__name__ in ("HTTPError", "ConnectionError", "Timeout", "ReadTimeout"):
-                raise RuntimeError(f"RPC refused eth_call ({e}); use an RPC that supports reads, e.g. https://eth.drpc.org") from e
-            return None
+        return self._eth_call({"to": addr, "data": _sel(sig)})
 
     def _call_args(self, addr: str, sig: str, args: bytes) -> bytes | None:
-        try:
-            r = self.w3.eth.call({"to": addr, "data": _sel(sig) + args})
-            return bytes(r) if r else None
-        except Exception:  # noqa: BLE001
-            return None
+        return self._eth_call({"to": addr, "data": _sel(sig) + args})
 
     def _addr(self, addr: str, sig: str) -> str | None:
         r = self._call(addr, sig)
-        if r and len(r) >= 32:
-            a = Web3.to_checksum_address("0x" + r[12:32].hex())
-            return None if a == ZERO else a
-        return None
+        return _word_addr(r) if r else None
 
     def _uint(self, addr: str, sig: str) -> int | None:
         r = self._call(addr, sig)
         return int.from_bytes(r[:32], "big") if r and len(r) >= 32 else None
 
     def _has_role(self, addr: str, role: bytes, who: str) -> bool | None:
-        data = _sel("hasRole(bytes32,address)") + role + bytes(12) + bytes.fromhex(who[2:])
-        try:
-            r = self.w3.eth.call({"to": addr, "data": data})
-        except Exception:  # noqa: BLE001
-            return None
-        return bool(int.from_bytes(bytes(r)[:32], "big")) if r and len(r) == 32 else None
+        r = self._eth_call({"to": addr, "data": _sel("hasRole(bytes32,address)") + role + _pad(who)})
+        return bool(int.from_bytes(r, "big")) if r and len(r) == 32 else None
 
     def _supports_access_control(self, addr: str) -> bool:
         return self._has_role(addr, ROLES["DEFAULT_ADMIN_ROLE"], ZERO) is not None
@@ -245,37 +316,52 @@ class Prober:
                     n.roles.setdefault(name, []).append(c)
             if n.kind == "timelock" and n.open_executor is None:
                 n.open_executor = False
-            self._refine_notes()
-            # Powerful roles held outside any timelock: the "multisig, but no clock" case. A pause role on a Safe is
-            # left out on purpose: pausing without delay is what a guardian is for.
-            upgrade = self.seen.get(n.proxy_admin) if n.proxy_admin else None
-            upgrade_delay = None
-            if upgrade is not None and self._timelocked(upgrade):
-                t = upgrade if upgrade.kind in ("timelock", "legacy-timelock") else self.seen.get(upgrade.owner or "")
-                upgrade_delay = t.delay if t is not None and t.delay else None
-            for role in ("DEFAULT_ADMIN_ROLE", "MINTER_ROLE", "UPGRADER_ROLE"):
-                for who in n.roles.get(role, []):
-                    c = self.seen.get(who) or self.probe(who, depth=2)   # a holder found by enumeration or a candidate
-                    if c.kind == "eoa":
-                        note = f"{role} held by EOA {who}"
-                    elif c.kind == "safe" and c.safe_threshold == 1:
-                        note = f"{role} held by 1-of-N Safe {who}"
-                    elif c.kind == "safe" and not self._timelocked(c):
-                        note = (f"{role} held by {c.safe_threshold}-of-{len(c.safe_owners)} Safe {who} with no timelock: "
-                                "it takes effect immediately")
-                        if upgrade_delay:
-                            note += f", while upgrades wait {upgrade_delay // 3600}h"
-                    else:
-                        continue
-                    if note not in n.notes:
-                        n.notes.append(note)
+            self._role_findings(n)
+        self._refine_notes()
         self.check_access_managers(candidates)
 
+    def _role_findings(self, n: Node) -> None:
+        """Powerful roles held outside any timelock: the "multisig, but no clock" case. A pause role on a Safe is
+        left out on purpose: pausing without delay is what a guardian is for."""
+        self._refine_notes()
+        upgrade = self.seen.get(n.proxy_admin) if n.proxy_admin else None
+        upgrade_delay = None
+        if upgrade is not None and self._timelocked(upgrade):
+            t = upgrade if upgrade.kind in ("timelock", "legacy-timelock") else self.seen.get(upgrade.owner or "")
+            upgrade_delay = t.delay if t is not None and t.delay else None
+        for role, holders in list(n.roles.items()):
+            core = role in ("DEFAULT_ADMIN_ROLE", "MINTER_ROLE", "UPGRADER_ROLE")
+            proposer = n.kind == "timelock" and role == "PROPOSER_ROLE"
+            if not (core or proposer or re.search(r"ADMIN|UPGRAD|MINT", role)):
+                continue
+            for who in holders:
+                if who == ZERO:     # no key signs for the zero address
+                    continue
+                c = self.seen.get(who) or self.probe(who)   # a holder found by enumeration or a candidate
+                if c.kind == "eoa":
+                    note = f"{role} held by EOA {who}" + (": one key can queue any change on this timelock" if proposer else "")
+                elif c.kind == "safe" and c.safe_threshold == 1:
+                    note = f"{role} held by 1-of-N Safe {who}"
+                elif core and c.kind == "safe" and not self._timelocked(c):
+                    note = (f"{role} held by {c.safe_threshold}-of-{len(c.safe_owners)} Safe {who} with no timelock: "
+                            "it takes effect immediately")
+                    if upgrade_delay:
+                        note += f", while upgrades wait {_dur(upgrade_delay)}"
+                else:
+                    continue
+                if note not in n.notes:
+                    n.notes.append(note)
+        executors = n.roles.get("EXECUTOR_ROLE", [])
+        if n.kind == "timelock" and not n.open_executor and len(executors) == 1:
+            if (self.seen.get(executors[0]) or self.probe(executors[0])).kind == "eoa":
+                note = f"the only EXECUTOR_ROLE holder is EOA {executors[0]}: nothing queued can run without that one key"
+                if note not in n.notes:
+                    n.notes.append(note)
+
     def _refine_notes(self) -> None:
-        """Once role holders are known, drop "no recognised timelock" notes whose controller turns out to act
-        through a timelock (an AccessControl contract whose DEFAULT_ADMIN_ROLE is a timelock, for instance)."""
-        import re
-        pat = re.compile(r" is (0x[0-9a-fA-F]{40}) with no recognised timelock in between$")
+        """Once role holders are known, drop the "no timelock" notes whose controller turns out to act through a
+        timelock (an AccessControl contract whose DEFAULT_ADMIN_ROLE is a timelock, for instance)."""
+        pat = re.compile(r" is (0x[0-9a-fA-F]{40}) with no (?:recognised )?timelock(?: in between$|: owner-level)")
         for n in list(self.seen.values()):
             keep = []
             for note in n.notes:
@@ -290,21 +376,23 @@ class Prober:
         in the contract's verified ABI (or its implementation's): MINTER_ROLE(), etc."""
         from .decode import implementation_of, verified_abi
         addr = Web3.to_checksum_address(addr)
+        abi: list = []
         try:
             chain_id = self.w3.eth.chain_id
-            abi = verified_abi(chain_id, addr)
-            if not abi:
-                impl = implementation_of(self.w3, addr)
-                abi = verified_abi(chain_id, impl) if impl else None
+            impl = implementation_of(self.w3, addr)
+            for a in (addr, impl):      # a verified proxy's own ABI says nothing about the roles behind it
+                if a:
+                    abi += verified_abi(chain_id, a) or []
         except Exception:  # noqa: BLE001
-            abi = None
-        getters = [f["name"] for f in abi or [] if f.get("type") == "function" and not f.get("inputs")
-                   and len(f.get("outputs") or []) == 1 and f["outputs"][0]["type"] == "bytes32"
-                   and f.get("stateMutability") in ("view", "pure")]
+            pass
+        getters = sorted({f["name"] for f in abi if f.get("type") == "function" and not f.get("inputs")
+                          and len(f.get("outputs") or []) == 1 and f["outputs"][0]["type"] == "bytes32"
+                          and f.get("stateMutability") in ("view", "pure")})
         if not getters:
             return {}
         results = self._batch_calls([(addr, _sel(f"{g}()")) for g in getters])
-        return {"0x" + r.hex(): g for g, r in zip(getters, results) if r and len(r) == 32}
+        # a getter returning zero is an unset value like merkleRoot(), not a name for DEFAULT_ADMIN_ROLE
+        return {"0x" + r.hex(): g for g, r in zip(getters, results) if r and len(r) == 32 and any(r)}
 
     def creation_block(self, addr: str) -> int:
         """Block the contract was deployed in: from Sourcify's verified deployment
@@ -341,7 +429,7 @@ class Prober:
         successes, wait out rate limits. budget caps the request count."""
         w3 = w3 or self.w3
         out: list = []
-        start, chunk, ceiling, requests_made = from_block, to_block - from_block + 1, None, 0
+        start, chunk, ceiling, requests_made, limited = from_block, to_block - from_block + 1, None, 0, 0
         while start <= to_block:
             end = min(start + chunk - 1, to_block)
             requests_made += 1
@@ -351,9 +439,11 @@ class Prober:
                 out += w3.eth.get_logs({**params, "fromBlock": start, "toBlock": end})
             except Exception as e:  # noqa: BLE001
                 msg = str(e).lower()
-                if "429" in msg or "rate limit" in msg or "too many requests" in msg:
-                    import time
-                    time.sleep(2)
+                if re.search(r"\b429\b|rate.?limit|too many requests", msg):
+                    limited += 1
+                    if limited > 8:
+                        raise ProbeRpcError(f"eth_getLogs still rate limited after {limited} waits at block {start}") from e
+                    time.sleep(min(2 ** limited, 30))
                     continue
                 if chunk <= 50 or not any(k in msg for k in ("range", "limit", "exceed", "large", "span", "many", "more than", "results")):
                     raise          # pruned history, auth, method missing: smaller chunks will not help
@@ -361,6 +451,7 @@ class Prober:
                 chunk = ceiling
                 continue
             start = end + 1
+            limited = 0
             if ceiling is None or chunk * 2 <= ceiling:
                 chunk *= 2
             if log:
@@ -378,14 +469,16 @@ class Prober:
         if is_am:
             granted = _norm(topic0("RoleGranted(uint64,address,uint32,uint48,bool)"))
             revoked = _norm(topic0("RoleRevoked(uint64,address)"))
+            guards = _norm(topic0("TargetFunctionRoleUpdated(address,bytes4,uint64)"))
         else:
             granted = _norm(topic0("RoleGranted(bytes32,address,address)"))
             revoked = _norm(topic0("RoleRevoked(bytes32,address,address)"))
+            guards = None
         if from_block is None:
             from_block = self.creation_block(addr)
             if log:
                 log(f"  {addr}: scanning role logs from block {from_block}")
-        params = {"address": addr, "topics": [[granted, revoked]]}
+        params = {"address": addr, "topics": [[t for t in (granted, revoked, guards) if t]]}
         if logs_w3 is None and self.w3.eth.chain_id in PUBLIC_LOG_RPCS:
             try:
                 public = Web3(Web3.HTTPProvider(PUBLIC_LOG_RPCS[self.w3.eth.chain_id], request_kwargs={"timeout": 60}))
@@ -397,10 +490,11 @@ class Prober:
         else:
             logs = self._get_logs_split(params, from_block, to_block or (logs_w3 or self.w3).eth.block_number, w3=logs_w3, log=log)
         logs.sort(key=lambda l: (l["blockNumber"], l["logIndex"]))
+        self.replayed.add(addr)
         if is_am:
-            return self._am_replay(addr, logs, granted)
-        names = {("0x" + bytes(v).hex()): k for k, v in ROLES.items()}
-        names.update(self.role_names(addr))
+            return self._am_replay(addr, logs, granted, guards)
+        names = self.role_names(addr)
+        names.update({("0x" + bytes(v).hex()): k for k, v in ROLES.items()})
         holders: dict[str, set[str]] = {}
         for lg in logs:
             t0 = "0x" + bytes(lg["topics"][0]).hex()
@@ -416,35 +510,52 @@ class Prober:
         if n is not None:
             for k, v in out.items():
                 n.roles[k] = v
-            for who in out.get("DEFAULT_ADMIN_ROLE", []):
-                try:
-                    c = self.probe(who, depth=2)
-                except Exception as e:  # noqa: BLE001
-                    if log:
-                        log(f"  could not classify {who}: {e}")
-                    continue
-                note = None
-                if c.kind == "eoa":
-                    note = f"DEFAULT_ADMIN_ROLE held by EOA {who}"
-                elif c.kind == "safe" and c.safe_threshold == 1:
-                    note = f"DEFAULT_ADMIN_ROLE held by 1-of-N Safe {who}"
-                if note and note not in n.notes:
-                    n.notes.append(note)
+            self._role_findings(n)
+            self._refine_notes()
         return out
 
-    def _am_replay(self, addr: str, logs: list, granted: str) -> dict[str, list[str]]:
-        """AccessManager role replay: every account ever granted a role, confirmed with hasRole now."""
+    def _am_replay(self, addr: str, logs: list, granted: str, guards: str) -> dict[str, list[str]]:
+        """AccessManager role replay: every account ever granted a role, confirmed with hasRole now, and every
+        target function ever given a role, confirmed with getTargetFunctionRole now. The second finds what a
+        role guards on targets with no verified ABI."""
         seen_pairs: set[tuple[int, str]] = set()
+        guarded: set[tuple[str, bytes]] = set()
         for lg in logs:
-            if "0x" + bytes(lg["topics"][0]).hex() == granted:
+            t0 = "0x" + bytes(lg["topics"][0]).hex()
+            if t0 == granted:
                 seen_pairs.add((int.from_bytes(bytes(lg["topics"][1]), "big"),
                                 Web3.to_checksum_address("0x" + bytes(lg["topics"][2])[-20:].hex())))
+            elif t0 == guards:
+                guarded.add((Web3.to_checksum_address("0x" + bytes(lg["topics"][1])[-20:].hex()), bytes(lg["data"])[:4]))
         m = self.seen[addr]
         self._am_map(m)
-        pairs = sorted(seen_pairs)
+        ordered = sorted(guarded)
+        calls = [(addr, _sel("getTargetFunctionRole(address,bytes4)") + _pad(t) + s + bytes(28)) for t, s in ordered]
+        for (target, selector), r in zip(ordered, self._batch_calls(calls)):
+            if not r or len(r) < 32:
+                continue
+            rid = int.from_bytes(r[:32], "big")
+            if rid in (0, AM_PUBLIC_ROLE):     # a guard set back to the default, or opened up: mapped by _am_map when the ABI names it
+                continue
+            known = self.seen.get(target)
+            names = {_sel(f): f.split("(")[0] for f in (self._am_target_fns(known)[0] if known else [])}
+            label = f"{names.get(selector, '0x' + selector.hex())} on {target}"
+            if not any(g == label for g in m.am_gates.get(rid, [])):
+                m.am_gates.setdefault(rid, []).append(label)
+        pairs = sorted(p for p in seen_pairs if p[1] != ZERO)    # a grant to the zero address gives no one the role
+        now = int(time.time())
         for (r, who), res in zip(pairs, self._am_has_role(addr, pairs)):
-            if res and res[0] and all(h != who for h, _ in m.am_roles.get(r, [])):
-                m.am_roles.setdefault(r, []).append((who, res[1]))
+            if res and res[0]:
+                if all(h != who for h, _ in m.am_roles.get(r, [])):
+                    m.am_roles.setdefault(r, []).append((who, res[1]))
+                continue
+            access = self._call_args(addr, "getAccess(uint64,address)", r.to_bytes(32, "big") + _pad(who))
+            since = int.from_bytes(access[:32], "big") if access and len(access) >= 32 else 0
+            if since > now:
+                c = self.seen.get(who) or self.probe(who)
+                note = f"pending grant: role {r} goes to {'EOA ' if c.kind == 'eoa' else ''}{who} at {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(since))}"
+                if note not in m.notes:
+                    m.notes.append(note)
         ids = sorted(r for r in m.am_roles if r not in m.am_role_admin)
         for r, adm in zip(ids, self._batch_calls([(addr, _sel("getRoleAdmin(uint64)") + r.to_bytes(32, "big")) for r in ids])):
             if adm and len(adm) >= 32:
@@ -453,9 +564,14 @@ class Prober:
         return {f"role {r}": [h for h, _ in v] for r, v in m.am_roles.items()}
 
     def _slot_addr(self, addr: str, slot: int) -> str | None:
-        v = self.w3.eth.get_storage_at(addr, slot)
-        a = Web3.to_checksum_address("0x" + bytes(v)[-20:].hex())
-        return None if a == ZERO else a
+        return _word_addr(bytes(self.w3.eth.get_storage_at(addr, slot)))
+
+    def _slots_addr(self, addr: str, *slots: int) -> str | None:
+        for slot in slots:
+            a = self._slot_addr(addr, slot)
+            if a:
+                return a
+        return None
 
     def _factory_admin(self, proxy: str, code: bytes) -> tuple[str | None, str | None]:
         """For a proxy with an implementation but an empty ERC-1967 admin slot, ask every factory
@@ -467,16 +583,12 @@ class Prober:
         for f in cands:
             if f == proxy:
                 continue
-            try:
-                if len(self.w3.eth.get_code(f)) == 0:
-                    continue
-                r = bytes(self.w3.eth.call({"to": f, "data": data}))
-            except Exception:  # noqa: BLE001
+            if len(self.w3.eth.get_code(f)) == 0:
                 continue
-            if len(r) == 32 and r[:12] == bytes(12):
-                a = Web3.to_checksum_address("0x" + r[12:].hex())
-                if a != ZERO:
-                    return a, f
+            r = self._eth_call({"to": f, "data": data})
+            a = _word_addr(r) if r else None
+            if a:
+                return a, f
         return None, None
 
     def _immutable_admin(self, proxy: str, code: bytes) -> str | None:
@@ -487,11 +599,8 @@ class Prober:
         for cand in _embedded_addresses(code):
             if cand == proxy:
                 continue
-            try:
-                r = bytes(self.w3.eth.call({"from": cand, "to": proxy, "data": data}))
-            except Exception:  # noqa: BLE001
-                continue
-            if len(r) == 32 and r[:12] == bytes(12) and Web3.to_checksum_address("0x" + r[12:].hex()) == cand:
+            r = self._eth_call({"from": cand, "to": proxy, "data": data})
+            if r and _word_addr(r) == cand:
                 return cand
         return None
 
@@ -500,11 +609,8 @@ class Prober:
         The shortest one is how fast this controller can act."""
         delays = []
         for level in (1, 2):
-            try:
-                r = bytes(self.w3.eth.call({"to": address, "data": _sel("getExecutorSettingsByAccessControl(uint8)") + level.to_bytes(32, "big")}))
-            except Exception:  # noqa: BLE001
-                continue
-            if len(r) >= 64 and r[12:32] != bytes(20):
+            r = self._call_args(address, "getExecutorSettingsByAccessControl(uint8)", level.to_bytes(32, "big"))
+            if r and len(r) >= 64 and r[12:32] != bytes(20):
                 delays.append(int.from_bytes(r[32:64], "big"))
         return min(delays) if delays else None
 
@@ -520,39 +626,57 @@ class Prober:
                        if res and len(res) >= 64 else None)
         return out
 
-    def _am_target_fns(self, t: Node) -> list[str]:
-        """Function signatures of an AccessManaged target that change state, from its verified ABI
-        (or its implementation's), else a short list of common admin functions."""
+    def _am_target_fns(self, t: Node) -> tuple[list[str], bool]:
+        """Function signatures of an AccessManaged target that change state, from its verified ABI and its
+        implementation's (a verified proxy's own ABI lists none of the functions behind it), plus a short list
+        of common admin functions. The bool says whether any ABI was found."""
         from .decode import verified_abi
+        abi: list = []
         try:
             chain_id = self.w3.eth.chain_id
-            abi = None
             for a in (t.address, t.clone_of, t.implementation):
-                if a and not abi:
-                    abi = verified_abi(chain_id, a)
+                if a:
+                    abi += verified_abi(chain_id, a) or []
         except Exception:  # noqa: BLE001
-            abi = None
-        fns = [f"{f['name']}({','.join(_abi_type(i) for i in f.get('inputs') or [])})" for f in abi or []
+            pass
+        fns = [f"{f['name']}({','.join(_abi_type(i) for i in f.get('inputs') or [])})" for f in abi
                if f.get("type") == "function" and f.get("stateMutability") not in ("view", "pure")]
-        return list(dict.fromkeys(fns + AM_FALLBACK_FNS))
+        return list(dict.fromkeys(fns + AM_FALLBACK_FNS)), bool(abi)
+
+    def _am_targets(self, m: Node) -> list[Node]:
+        """Contracts the manager can reach: those it gates through authority(), and those it owns or administers
+        directly, whose onlyOwner functions it calls through execute()."""
+        return [n for n in self.seen.values() if n.address != m.address and m.address in (n.authority, n.owner, n.proxy_admin, n.admin)]
 
     def _am_map(self, m: Node) -> set[int]:
         """Role ids of an AccessManager that matter for the targets seen: the roles guarding their functions,
         ADMIN_ROLE, and every role admin and guardian above them. Records which functions each role gates."""
-        targets = [n for n in self.seen.values() if n.authority == m.address]
         roles: set[int] = {0}
-        for t in targets:
-            fns = self._am_target_fns(t)
-            calls = [(m.address, _sel("getTargetFunctionRole(address,bytes4)") + bytes(12) + bytes.fromhex(t.address[2:])
-                      + _sel(f) + bytes(28)) for f in fns]
+        for t in self._am_targets(m):
+            fns, verified = self._am_target_fns(t)
+            if not verified and t.address not in m.am_unmapped:
+                m.am_unmapped.append(t.address)
+            closed = self._call_args(m.address, "isTargetClosed(address)", _pad(t.address))
+            if closed and any(closed):      # nobody can call anything on it, whatever the guards say
+                if t.address not in m.am_closed:
+                    m.am_closed.append(t.address)
+                continue
+            delay = self._call_args(m.address, "getTargetAdminDelay(address)", _pad(t.address))
+            if delay and any(delay):
+                m.am_target_delay[t.address] = int.from_bytes(delay[:32], "big")
+            calls = [(m.address, _sel("getTargetFunctionRole(address,bytes4)") + _pad(t.address) + _sel(f) + bytes(28)) for f in fns]
             for f, r in zip(fns, self._batch_calls(calls)):
                 if not r or len(r) < 32:
                     continue
                 rid = int.from_bytes(r[:32], "big")
+                label = f"{f.split('(')[0]} on {t.address}"
                 if rid == AM_PUBLIC_ROLE:
+                    if AM_SENSITIVE_FN.match(f) and label not in m.am_open:
+                        m.am_open.append(label)
+                    continue
+                if rid == 0:     # every function nobody configured reads as ADMIN_ROLE, including ones that do not exist
                     continue
                 roles.add(rid)
-                label = f"{f.split('(')[0]} on {t.address}"
                 if label not in m.am_gates.setdefault(rid, []):
                     m.am_gates[rid].append(label)
         frontier = set(roles)
@@ -574,6 +698,9 @@ class Prober:
                     g = int.from_bytes(grd[:32], "big")
                     if g not in roles and g not in (0, AM_PUBLIC_ROLE):
                         new.add(g)
+            for r, gd in zip(ids, self._batch_calls([(m.address, _sel("getRoleGrantDelay(uint64)") + r.to_bytes(32, "big")) for r in ids])):
+                if gd and any(gd):
+                    m.am_grant_delay[r] = int.from_bytes(gd[:32], "big")
             roles |= new
             frontier = new
         return roles
@@ -599,7 +726,7 @@ class Prober:
                 for (r, c), res in zip(pairs, self._am_has_role(m.address, pairs)):
                     if res and res[0] and all(h != c for h, _ in m.am_roles.get(r, [])):
                         m.am_roles.setdefault(r, []).append((c, res[1]))
-                        holder = self.seen.get(c) or self.probe(c, depth=2)
+                        holder = self.seen.get(c) or self.probe(c)
                         if holder.kind == "safe":
                             cands |= set(holder.safe_owners)
             self._am_findings(m)
@@ -607,27 +734,50 @@ class Prober:
     def _am_findings(self, m: Node) -> None:
         administers: dict[int, list[int]] = {}
         for r, a in m.am_role_admin.items():
-            if a != r:
+            if a == AM_PUBLIC_ROLE:
+                note = f"role {r} has PUBLIC_ROLE as its admin: anyone can grant it to themselves"
+                if note not in m.notes:
+                    m.notes.append(note)
+            elif a != r:
                 administers.setdefault(a, []).append(r)
-        targets = [n for n in self.seen.values() if n.authority == m.address]
+        targets = self._am_targets(m)
+        for label in m.am_open:
+            note = f"{label} is open to PUBLIC_ROLE: anyone can call it"
+            if note not in m.notes:
+                m.notes.append(note)
+            for t in targets:
+                if label.endswith(t.address) and f"AccessManager {m.address}: {note}" not in t.notes:
+                    t.notes.append(f"AccessManager {m.address}: {note}")
+        for address in m.am_unmapped:
+            if m.address not in self.replayed:
+                note = (f"{address} has no verified ABI, so only {len(AM_FALLBACK_FNS)} common functions were checked for the role "
+                        "guarding them: rerun with --roles-from-logs")
+                if note not in m.notes:
+                    m.notes.append(note)
+        grant_delay = lambda x: f" after {_dur(m.am_grant_delay[x])}" if m.am_grant_delay.get(x) else ""
+        gates_on = lambda x, t: any(g.endswith(t.address) for g in m.am_gates.get(x, []))
         for r, holders in sorted(m.am_roles.items()):
             powers = []
             if r == 0:
-                powers.append("ADMIN_ROLE: can grant any role and change which role guards any function")
+                waits = [f"role {x}{grant_delay(x)}" for x in sorted(m.am_grant_delay) if m.am_grant_delay[x]]
+                guard_waits = [f"{_dur(d)} on {t}" for t, d in sorted(m.am_target_delay.items())]
+                powers.append("ADMIN_ROLE: can grant any role" + (f" ({', '.join(waits)})" if waits else "")
+                              + " and change which role guards any function" + (f" (waits {', '.join(guard_waits)})" if guard_waits else ""))
             if administers.get(r):
                 def _role(x: int) -> str:
                     fns = sorted({g.split(" on ")[0] for g in m.am_gates.get(x, [])})
-                    return str(x) + (f" (calls {', '.join(fns[:3])})" if fns else "")
+                    return str(x) + (f" (calls {', '.join(fns[:3])})" if fns else "") + grant_delay(x)
                 powers.append("can grant itself or others roles " + ", ".join(_role(x) for x in sorted(administers[r])))
             if m.am_gates.get(r):
                 fns = sorted({g.split(" on ")[0] for g in m.am_gates[r]})
                 powers.append("calls " + ", ".join(fns[:5]) + (f" and {len(fns) - 5} more" if len(fns) > 5 else ""))
+            mapped = bool(powers)
             if not powers:
-                continue
+                powers.append("what it guards could not be mapped from the functions checked")
             for who, delay in holders:
-                if delay:
+                if delay >= LONG_DELAY:
                     continue
-                c = self.seen.get(who) or self.probe(who, depth=2)
+                c = self.seen.get(who) or self.probe(who)
                 if c.kind == "eoa":
                     holder = f"EOA {who}"
                 elif c.kind == "safe" and c.safe_threshold == 1:
@@ -636,12 +786,16 @@ class Prober:
                     holder = f"{c.safe_threshold}-of-{len(c.safe_owners)} Safe {who}"
                 else:
                     continue
-                note = f"role {r} held by {holder} with no execution delay ({'; '.join(powers)})"
+                wait = f"only {_dur(delay)} execution delay" if delay else "no execution delay"
+                note = f"role {r} held by {holder} with {wait} ({'; '.join(powers)})"
                 if note not in m.notes:
                     m.notes.append(note)
+                if not mapped:
+                    continue
                 for t in targets:
                     tn = f"AccessManager {m.address} " + note
-                    if (r == 0 or administers.get(r) or any(g.endswith(t.address) for g in m.am_gates.get(r, []))) and tn not in t.notes:
+                    reaches = r == 0 or gates_on(r, t) or any(gates_on(x, t) for x in administers.get(r, []))
+                    if reaches and tn not in t.notes:
                         t.notes.append(tn)
 
     def _timelocked(self, n: Node, hops: int = 4) -> bool:
@@ -654,10 +808,34 @@ class Prober:
         ctls = {a for a in (n.proxy_admin, n.owner, n.admin, n.dao, n.emergency, *n.wards) if a and a != n.address}
         if not ctls:   # an AccessControl contract with no owner: whoever holds DEFAULT_ADMIN_ROLE controls it
             ctls = {a for a in n.roles.get("DEFAULT_ADMIN_ROLE", []) if a != n.address}
-        return bool(ctls) and all(self._timelocked(self.seen.get(a) or self.probe(a, depth=2), hops - 1) for a in ctls)
+        return bool(ctls) and all(self._timelocked(self.seen.get(a) or self.probe(a), hops - 1) for a in ctls)
 
     # ---- probe ----
-    def probe(self, address: str, depth: int = 0) -> Node:
+    def _has_timelock_functions(self, address: str, code: bytes, implementation: str | None) -> bool:
+        """Whether a contract with a delay getter can actually queue things: known timelock selectors in its code
+        or its implementation's, or queue/schedule/propose functions in its verified ABI."""
+        from .decode import verified_abi
+        codes = code + (bytes(self.w3.eth.get_code(implementation)) if implementation else b"")
+        if any(_sel(f) in codes for f in TIMELOCK_FNS):
+            return True
+        try:
+            chain_id = self.w3.eth.chain_id
+            abi = [f for a in (address, implementation) if a for f in verified_abi(chain_id, a) or []]
+        except Exception:  # noqa: BLE001
+            abi = []
+        return any(f.get("type") == "function" and TIMELOCK_FN_NAME.search(f.get("name", "")) for f in abi)
+
+    def _safe_modules(self, address: str) -> list[str]:
+        r = self._call_args(address, "getModulesPaginated(address,uint256)", _pad("0x" + "00" * 19 + "01") + (50).to_bytes(32, "big"))
+        if not r:
+            return []
+        try:
+            modules, _next = abi_decode(["address[]", "address"], r)
+        except Exception:  # noqa: BLE001
+            return []
+        return [Web3.to_checksum_address(m) for m in modules]
+
+    def probe(self, address: str) -> Node:
         address = Web3.to_checksum_address(address)
         if address in self.seen:
             return self.seen[address]
@@ -673,30 +851,42 @@ class Prober:
             n.kind = "eoa"
             return n
         n.clone_of = _clone_target(code)
-        n.implementation = self._slot_addr(address, IMPL_SLOT)
-        n.proxy_admin = self._slot_addr(address, ADMIN_SLOT)
+        n.implementation = self._slots_addr(address, IMPL_SLOT, *LEGACY_IMPL_SLOTS)
+        n.proxy_admin = self._slots_addr(address, ADMIN_SLOT, LEGACY_ADMIN_SLOT)
         n.beacon = self._slot_addr(address, BEACON_SLOT)
+        if n.clone_of and not n.beacon:
+            n.beacon = self._slot_addr(n.clone_of, BEACON_SLOT)   # a clone runs its target's code, so the target's beacon can swap it
         if n.implementation and not n.proxy_admin and not n.beacon:
             n.proxy_admin, n.admin_factory = self._factory_admin(address, code)
             if not n.proxy_admin:
                 n.proxy_admin = self._immutable_admin(address, code)
+        if n.beacon:
+            b = self.probe(n.beacon)     # whoever can change the beacon's implementation upgrades this proxy
+            n.proxy_admin = n.proxy_admin or b.owner or b.proxy_admin or b.admin
+            n.implementation = n.implementation or self._addr(n.beacon, "implementation()")
         thr = self._uint(address, "getThreshold()")
         owners = self._call(address, "getOwners()")
-        if thr is not None and owners and len(owners) >= 64:
+        # a catch-all fallback answers both of these with junk, so the array has to add up
+        count = int.from_bytes(owners[32:64], "big") if owners and len(owners) >= 64 else 0
+        if thr is not None and 0 < count <= (len(owners) - 64) // 32 and int.from_bytes(owners[:32], "big") == 32:
             n.kind = "safe"
             n.safe_threshold = thr
-            count = int.from_bytes(owners[32:64], "big")
             n.safe_owners = [Web3.to_checksum_address("0x" + owners[64 + 32 * i + 12: 64 + 32 * i + 32].hex())
                              for i in range(count)]
+            n.safe_modules = self._safe_modules(address)
             if thr == 1:
                 n.notes.append("1-of-N Safe: a single key can act")
-            elif thr <= count // 2:
+            elif thr * 2 < count:
                 n.notes.append(f"{thr}-of-{count} Safe: fewer than half the owners are needed")
+            elif thr * 2 == count:
+                n.notes.append(f"{thr}-of-{count} Safe: half the owners are enough")
         d = self._uint(address, "getMinDelay()")      # OpenZeppelin TimelockController
         if d is None:
-            d = self._uint(address, "getDelay()")     # Aave Governance V3 executors and similar
-        if d is None:
-            d = self._uint(address, "minDelay()")     # Solady Timelock
+            for getter in ("getDelay()", "minDelay()"):     # Aave executors and similar; Solady Timelock
+                if d is None and n.kind == "unknown":
+                    v = self._uint(address, getter)
+                    if v is not None and self._has_timelock_functions(address, code, n.implementation):
+                        d = v
         if d is None:
             d = self._executor_delay(address)         # Aave Governance V3 PayloadsController
         if d is not None and n.kind == "unknown":
@@ -708,12 +898,13 @@ class Prober:
                 and self._call_args(address, "plans(bytes32)", bytes(32)) is not None):
             n.kind = "timelock"                   # Sky/Maker DSPause: delay() + authority() (the chief), plans
             n.delay = legacy
-        if legacy is not None and legacy_admin and n.kind == "unknown":
+        if legacy is not None and legacy_admin and n.kind == "unknown" and self._has_timelock_functions(address, code, n.implementation):
             n.kind = "legacy-timelock"            # Compound-style: delay() + admin()
             n.delay = legacy
             n.admin = legacy_admin
         elif (legacy is not None and n.kind == "unknown" and not n.implementation and not n.beacon
-              and 3600 <= legacy <= 90 * 86400 and self._addr(address, "owner()")):
+              and 3600 <= legacy <= 90 * 86400 and self._addr(address, "owner()")
+              and self._has_timelock_functions(address, code, None)):
             n.kind = "timelock"                   # custom Ownable timelock: delay() + owner()
             n.delay = legacy
         if n.kind == "unknown" and self._is_access_manager(address):
@@ -753,9 +944,12 @@ class Prober:
             if n.delay == 0:
                 n.notes.append("timelock delay is 0")
             elif n.delay < 86400:
-                n.notes.append(f"timelock delay is only {n.delay // 3600}h")
-        # follow controllers one level down
-        if depth < 2:
+                n.notes.append(f"timelock delay is only {_dur(n.delay)}")
+        # follow the controllers all the way up: a key three hops above a proxy is still the key that upgrades it
+        if len(self.seen) >= MAX_NODES:
+            if "controller walk stopped" not in " ".join(self.incomplete):
+                self.incomplete.append(f"controller walk stopped at {MAX_NODES} addresses: this graph is not fully covered")
+        else:
             links: dict[str, list[str]] = {}
             if n.proxy_admin and n.proxy_admin != address:
                 links.setdefault(n.proxy_admin, []).append("upgrade admin")
@@ -766,14 +960,20 @@ class Prober:
             for ctl, what in ((n.authorizer, "authorizer"), (n.dao, "dao()"), (n.emergency, "emergency()"), *((w, "ward") for w in n.wards)):
                 if ctl and ctl != address:
                     links.setdefault(ctl, []).append(what)
+            if n.beacon and not n.proxy_admin:
+                links.setdefault(n.beacon, []).append("upgrade beacon")
             if n.authority:
-                self.probe(n.authority, depth + 1)   # its role holders are resolved in check_roles
+                self.probe(n.authority)   # its role holders are resolved in check_roles
+            for module in n.safe_modules:
+                c = self.probe(module)
+                n.notes.append(f"Safe module {module} ({'an EOA' if c.kind == 'eoa' else c.kind}) can execute without the signers")
             for ctl, roles in links.items():
-                c = self.probe(ctl, depth + 1)
+                c = self.probe(ctl)
                 what = " and ".join(roles)
                 if c.kind == "eoa":
                     n.notes.append(f"{what} is an EOA {ctl}" + (f" (EIP-7702 delegated to {c.delegate})" if c.delegate else "")
-                                   + ": one private key, no timelock, no multisig")
+                                   + (": one private key, no multisig" if n.kind in ("timelock", "legacy-timelock")
+                                      else ": one private key, no timelock, no multisig"))
                 elif c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"{what} is a 1-of-N Safe {ctl}")
                 elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract") and not self._timelocked(c):
@@ -787,8 +987,10 @@ class Prober:
                     a = self._addr(address, sig)
                     if not a or a == address or a in (n.owner, n.proxy_admin, n.admin):
                         continue
+                    if sig == "safe()" and self._call(address, "totalAssets()") is None:
+                        label = "safe()"    # plenty of modules name their Safe; only a vault's holds its assets
                     n.named[label] = a
-                    c = self.probe(a, depth + 1)
+                    c = self.probe(a)
                     if c.kind == "eoa":
                         n.notes.append(f"{label} is an EOA {a}" + (f" (EIP-7702 delegated to {c.delegate})" if c.delegate else ""))
                     elif c.kind == "safe" and c.safe_threshold == 1:
@@ -825,6 +1027,8 @@ def describe(n: Node) -> str:
         bits.append(f"{label.split(' ')[0]}={a}")
     if n.safe_threshold is not None:
         bits.append(f"safe {n.safe_threshold}-of-{len(n.safe_owners)}")
+    if n.safe_modules:
+        bits.append(f"modules={','.join(n.safe_modules)}")
     if n.delay is not None:
         bits.append(f"delay={n.delay}s")
     if n.paused is not None:
@@ -868,6 +1072,31 @@ def chain_name_for(chain_id: int) -> str:
     return CHAIN_NAMES.get(chain_id, f"chain {chain_id}")
 
 
+def fact_lines(prober: Prober, chain_name: str) -> list[str]:
+    """Every control fact in the report, one per line with full addresses, sorted. The ownerwatch Action compares
+    these lines, so a change to anything here is drift; only what the tool sees of the chain goes in, no prose."""
+    out = []
+    for n in prober.seen.values():
+        pairs: list[tuple[str, object]] = [("kind", n.kind)]
+        pairs += [(k, v) for k, v in (("implementation", n.implementation), ("upgrade_admin", n.proxy_admin), ("beacon", n.beacon),
+                                      ("owner", n.owner), ("pending_owner", n.pending_owner), ("admin", n.admin), ("clone_of", n.clone_of),
+                                      ("authority", n.authority), ("kernel", n.kernel), ("authorizer", n.authorizer), ("dao", n.dao),
+                                      ("emergency", n.emergency), ("delegate", n.delegate), ("threshold", n.safe_threshold),
+                                      ("delay", n.delay)) if v is not None]
+        pairs += [("signer", a) for a in n.safe_owners] + [("module", a) for a in n.safe_modules] + [("ward", a) for a in n.wards]
+        if n.paused:
+            pairs.append(("paused", "true"))
+        if n.open_executor:
+            pairs.append(("open_executor", "true"))
+        pairs += [(label.split(" ")[0], a) for label, a in n.named.items()]
+        pairs += [(f"role {role}", h) for role, holders in n.roles.items() for h in holders]
+        pairs += [(f"am_role {r}", f"{h} delay {d}") for r, holders in n.am_roles.items() for h, d in holders]
+        pairs += [(f"am_role_admin {r}", a) for r, a in n.am_role_admin.items() if a]
+        pairs += [(f"am_gate {r}", g) for r, gates in n.am_gates.items() for g in gates]
+        out += [f"{chain_name} {n.address} {k} {v}" for k, v in pairs]
+    return sorted(out)
+
+
 def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Node]) -> str:
     """A short admin-surface report a protocol team can read in two minutes."""
     def short(a: str) -> str:
@@ -882,12 +1111,20 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
         detail = []
         if n.safe_threshold is not None:
             detail.append(f"{n.safe_threshold}-of-{len(n.safe_owners)}")
+        if n.safe_modules:
+            detail.append("modules: " + ", ".join(short(a) for a in n.safe_modules))
         if n.delay is not None:
-            detail.append(f"{n.delay // 3600}h delay")
+            detail.append(f"{_dur(n.delay)} delay")
         if n.implementation:
             detail.append(f"impl {short(n.implementation)}")
+        if n.beacon:
+            detail.append(f"beacon {short(n.beacon)}")
         if n.clone_of:
-            detail.append(f"EIP-1167 clone of {short(n.clone_of)} (not upgradeable)")
+            detail.append(f"EIP-1167 clone of {short(n.clone_of)} ({'upgradeable through its beacon' if n.beacon else 'not upgradeable'})")
+        if n.owner and n.owner != ctl:
+            detail.append(f"owner {short(n.owner)}")
+        if n.pending_owner:
+            detail.append(f"pending owner {short(n.pending_owner)}")
         if n.authority:
             detail.append(f"AccessManager {short(n.authority)}")
         for label, a in n.named.items():
@@ -909,9 +1146,10 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
             lines.append(f"- `{short(a)}`: {note}")
     else:
         lines.append("- No single-key or zero-delay control paths found among the probed addresses.")
-    if any(n.kind == "access-manager" and not any(n.am_roles.get(r) for r in n.am_roles) for n in prober.seen.values()):
-        lines.append("- An AccessManager was found but none of the tested addresses holds a role in it. It does not list its "
-                     "members: rerun with --roles-from-logs, or pass likely holders with --role-candidates.")
+    if any(n.kind == "access-manager" and n.address not in prober.replayed for n in prober.seen.values()):
+        lines.append("- An AccessManager was found. It does not list its members, so only the tested addresses were checked for "
+                     "roles: rerun with --roles-from-logs, or pass likely holders with --role-candidates.")
+    lines += [f"- Not covered: {x}" for x in prober.incomplete]
     chain_summary = []
     for r in roots:
         path, cur, hops = [r], r, 0
@@ -927,5 +1165,7 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
     lines += ["", "## What ownerwatch would alert on", "",
               "Owner, proxy admin and implementation changes; Safe signer and threshold changes and every queued Safe transaction before it executes; "
               "timelock schedules with the decoded call; role grants and revokes; pauses; large treasury outflows.", "",
-              f"_Generated by `ownerwatch probe` on {chain_name}. Read-only; nothing was sent on-chain._"]
+              "## Full facts", "", "The ownerwatch Action compares these lines to catch drift. Nothing here is shortened.", "",
+              "```ownerwatch-facts", *fact_lines(prober, chain_name), "```", "",
+              f"_Generated by `ownerwatch probe` {__version__} on {chain_name}. Read-only; nothing was sent on-chain._"]
     return "\n".join(lines) + "\n"

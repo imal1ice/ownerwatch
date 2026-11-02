@@ -177,6 +177,21 @@ def test_a_scan_failure_keeps_the_progress_already_made(tmp_path):
     assert 300 <= w.cursor.last_block < 1000
 
 
+def test_dead_rpc_fails_at_once_and_leaves_the_range_alone(tmp_path):
+    c = cfg(tmp_path, max_block_range=2000)
+    w3 = W3(head=1000)
+    w, _ = watcher(c, w3=w3)
+
+    def down(params):
+        w3.eth.ranges.append(1)
+        raise requests.ConnectionError("refused")
+
+    w3.eth.get_logs = down
+    with pytest.raises(requests.ConnectionError):
+        w.poll_once()
+    assert w3.eth.ranges == [1] and w._chunk == 2000
+
+
 def test_chunk_grows_back_after_a_transient_failure(tmp_path):
     from ownerwatch.watcher import GROW_AFTER
     c = cfg(tmp_path, max_block_range=64)
