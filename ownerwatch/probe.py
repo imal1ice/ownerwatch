@@ -1139,7 +1139,8 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
         for role, holders in n.roles.items():
             detail.append(f"{role}: " + ", ".join(short(h) for h in holders))
         lines.append(f"| `{short(n.address)}` | {n.kind} | `{short(ctl) if ctl != '-' else '-'}` | {'; '.join(detail) or '-'} |")
-    risks = [(n.address, note) for n in prober.seen.values() for note in n.notes]
+    # the manager's own row states each AccessManager finding; repeating it per target buries the rest of the report
+    risks = [(n.address, note) for n in prober.seen.values() for note in n.notes if not note.startswith("AccessManager 0x")]
     lines += ["", "## Findings", ""]
     if risks:
         for a, note in risks:

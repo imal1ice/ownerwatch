@@ -398,6 +398,19 @@ def test_replay_finds_guards_and_pending_grants(anvil, artifacts):  # noqa: F811
     assert am.address in p.replayed
 
 
+def test_report_states_a_manager_finding_once(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    am, target = am_setup(w3, artifacts)
+    key = w3.eth.accounts[3]
+    send(w3, am.functions.grant(0, key, 0))
+    p = Prober(w3)
+    n = p.probe(target.address)
+    p.check_roles([key])
+    assert any(x.startswith("AccessManager 0x") for x in n.notes)      # the node keeps it, for --json and describe
+    md = markdown_report(p, "T", "x", [n])
+    assert md.count(f"role 0 held by EOA {key}") == 1
+
+
 def test_caveat_stays_until_the_manager_was_replayed(anvil, artifacts):  # noqa: F811
     w3 = anvil
     am, target = am_setup(w3, artifacts)
