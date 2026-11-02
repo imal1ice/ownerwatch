@@ -44,12 +44,14 @@ Run `ownerwatch events` to print the catalog.
 ## Quick start
 
 ```bash
-pip install git+https://github.com/imal1ice/ownerwatch
-cp config.example.yaml config.yaml   # add your contracts and a Discord/Telegram target
+pip install ownerwatch
+ownerwatch probe --rpc https://eth.drpc.org --yaml --label Acme 0xYourProxy 0xYourSafe > config.yaml   # a config written from chain state
 ownerwatch run --config config.yaml
 ```
 
-Or with Docker:
+Add a Discord, Slack or Telegram target under `alerts` in `config.yaml`. Every option is in [config.example.yaml](config.example.yaml).
+
+Or with Docker, from a clone of this repository:
 
 ```bash
 docker compose up -d        # uses ./config.yaml, keeps state in a named volume
@@ -84,14 +86,15 @@ ownerwatch backfill --from-block N --to-block M   # replay history: prints what 
 ownerwatch events                           # list the catalog
 ```
 
-See [docs/what-to-watch.md](docs/what-to-watch.md) for the control-graph model behind the catalog, and [docs/sample-alerts.md](docs/sample-alerts.md) for real alerts replayed from mainnet history.
+See [docs/what-to-watch.md](docs/what-to-watch.md) for the control-graph model behind the catalog, [docs/safe-1-4-1-events.md](docs/safe-1-4-1-events.md) for a decoding trap that silently hides Safe signer changes, and [docs/sample-alerts.md](docs/sample-alerts.md) for real alerts replayed from mainnet history.
 
 ## Examples
 
 `examples/` has verified configs for Uniswap, Compound, Arbitrum, Aave and the Optimism Foundation Safe on mainnet. Backfill one to see what alerts look like on real history:
 
 ```bash
-ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --to-block 22050000
+git clone https://github.com/imal1ice/ownerwatch && cd ownerwatch
+ownerwatch backfill --config examples/compound-mainnet.yaml --from-block 25768000 --to-block 25790000
 ```
 
 ## How it works
