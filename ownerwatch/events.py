@@ -534,8 +534,19 @@ BY_TOPIC: dict[str, EventSpec] = {_norm(topic0(s.signature)): s for s in CATALOG
 TRANSFER_TOPIC = _norm(topic0(TRANSFER_SPEC.signature))
 ERC1155_TOPICS = [_norm(topic0(ERC1155_SINGLE_SPEC.signature)), _norm(topic0(ERC1155_BATCH_SPEC.signature))]
 # Same signature as a CATALOG entry but a different `indexed` layout, so the same topic0 needs a second decoder.
+def _safe_indexed(spec_name: str) -> EventSpec:
+    """Safe 1.4.1 and 1.5.0 index the first argument of events earlier versions leave in the data."""
+    base = next(s for s in CATALOG if s.name == spec_name and s.source == "Safe")
+    inputs = [{**i, "indexed": n == 0} for n, i in enumerate(base.abi["inputs"])]
+    return EventSpec(base.name, base.signature, {**base.abi, "inputs": inputs}, base.severity, base.describe, base.source)
+
+
 VARIANTS: list[EventSpec] = [
     _single("ProposalExecuted", "uint256", "id", True, "high", "timelock proposal {id} executed", "EmergencyProtectedTimelock"),
+    *[_safe_indexed(n) for n in ("AddedOwner", "RemovedOwner", "EnabledModule", "DisabledModule", "ChangedGuard",
+                                 "ChangedFallbackHandler", "ExecutionSuccess", "ExecutionFailure")],
+    # older OpenZeppelin/zOS proxies, USDC among them, leave the implementation in the data
+    _single("Upgraded", "address", "implementation", False, "critical", "proxy implementation upgraded to {implementation}", "ERC-1967"),
 ]
 VARIANTS_BY_TOPIC: dict[str, list[EventSpec]] = {}
 for _v in VARIANTS:

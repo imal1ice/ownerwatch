@@ -60,7 +60,7 @@ def test_queue_lifecycle(monkeypatch):
     w2.import_state(exported)
     sess.pending = [_tx("0xh1", 1)]
     assert w2.poll() == []
-    assert "0xh2" not in w2.state["0x" + "ff" * 20].seen
+    assert "0xh2" not in w2.state["eth:0x" + "ff" * 20].seen
 
 
 def test_first_run_suppression_survives_failed_poll(monkeypatch):
@@ -101,7 +101,7 @@ def test_pagination(monkeypatch):
 
     w = SafeQueueWatcher([SafeTarget("0x" + "ff" * 20, "S", "eth")], "ethereum", session=Paged())
     w.poll(first_run=True)
-    assert set(w.state["0x" + "ff" * 20].seen) == {"0xp1", "0xp2"}
+    assert set(w.state["eth:0x" + "ff" * 20].seen) == {"0xp1", "0xp2"}
 
 
 def test_safe_added_later_is_seeded_silently(monkeypatch):
@@ -122,4 +122,4 @@ def test_safe_added_later_is_seeded_silently(monkeypatch):
     # legacy state without the seeded flag is treated as seeded
     w3 = SafeQueueWatcher([SafeTarget(a, "A", "eth")], "ethereum", session=sess)
     w3.import_state({a: {"seen": {"0xold1": 1}, "ready": []}})
-    assert w3.state[a].seeded is True
+    assert w3.state[f"eth:{a}"].seeded is True

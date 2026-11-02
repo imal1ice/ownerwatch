@@ -6,8 +6,9 @@ signatures to be executable, and keeps the set of seen hashes in the cursor
 file so restarts don't re-alert.
 
 Service URLs follow https://api.safe.global/tx-service/<chain>/api/v1/...;
-chain keys as published by Safe: eth, base, arb1, oeth, matic, gno, bnb,
-sep, avax, scr, linea, zkevm, mantle, blast, celo, aurora, xlayer, sonic, ...
+chain keys as published by Safe: eth, base, arb1, oeth, pol, gno, bnb, sep,
+avax, scr, linea, mantle, celo, aurora, sonic, zksync, berachain, ink,
+unichain, hemi, ...
 No API key was needed at the time of writing; one can be passed anyway.
 """
 from __future__ import annotations
@@ -17,7 +18,7 @@ from dataclasses import dataclass, field
 
 import requests
 
-from .alerts import Alert
+from .alerts import Alert, redact
 from .decode import describe_call
 
 log = logging.getLogger("ownerwatch")
@@ -39,9 +40,10 @@ class SafeState:
 
 
 class SafeQueueWatcher:
-    CHAIN_IDS = {"eth": 1, "base": 8453, "arb1": 42161, "oeth": 10, "matic": 137, "gno": 100, "bnb": 56,
-                 "sep": 11155111, "avax": 43114, "scr": 534352, "linea": 59144, "zkevm": 1101, "mantle": 5000,
-                 "blast": 81457, "celo": 42220, "sonic": 146}
+    CHAIN_IDS = {"eth": 1, "base": 8453, "arb1": 42161, "oeth": 10, "pol": 137, "gno": 100, "bnb": 56,
+                 "sep": 11155111, "avax": 43114, "scr": 534352, "linea": 59144, "mantle": 5000,
+                 "celo": 42220, "aurora": 1313161554, "sonic": 146, "zksync": 324, "berachain": 80094,
+                 "ink": 57073, "unichain": 130, "hemi": 43111}
 
     def __init__(self, targets: list[SafeTarget], chain_name: str, api_key: str = "",
                  session: requests.Session | None = None, w3=None):
@@ -50,19 +52,25 @@ class SafeQueueWatcher:
         self.chain_name = chain_name
         self.session = session or requests.Session()
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        self.state: dict[str, SafeState] = {t.address: SafeState() for t in targets}
+        self.state: dict[str, SafeState] = {self._key(t): SafeState() for t in targets}
         self.last_poll_ok = False
+
+    @staticmethod
+    def _key(t: SafeTarget) -> str:
+        return f"{t.chain}:{t.address}"     # the same address can be a different Safe on another chain
 
     # ---- persistence helpers ------------------------------------------------------
     def export_state(self) -> dict:
         return {a: {"seen": s.seen, "ready": sorted(s.ready), "seeded": s.seeded} for a, s in self.state.items()}
 
     def import_state(self, d: dict) -> None:
-        for a, s in (d or {}).items():
-            if a in self.state:
+        d = d or {}
+        for t in self.targets:
+            s = d.get(self._key(t)) or d.get(t.address)    # state written before 0.11 is keyed by address alone
+            if s:
                 # state written before `seeded` existed counts as seeded: it was recorded by an earlier first run
-                self.state[a] = SafeState(seen=dict(s.get("seen", {})), ready=set(s.get("ready", [])),
-                                          seeded=bool(s.get("seeded", True)))
+                self.state[self._key(t)] = SafeState(seen=dict(s.get("seen", {})), ready=set(s.get("ready", [])),
+                                                     seeded=bool(s.get("seeded", True)))
 
     # ---- polling --------------------------------------------------------------------
     def _get(self, url: str, **params) -> dict:
@@ -90,7 +98,7 @@ class SafeQueueWatcher:
                 alerts += self._poll_safe(t, first_run)
             except Exception as e:  # noqa: BLE001
                 ok = False
-                log.warning("safe queue poll failed for %s: %s", t.label, e)
+                log.warning("safe queue poll failed for %s: %s", t.label, redact(e))
         self.last_poll_ok = ok
         return alerts
 
@@ -113,7 +121,7 @@ class SafeQueueWatcher:
         info = self._get(f"{base}/safes/{t.address}/")
         threshold = int(info.get("threshold", 0))
         pending = self._pending(base, t.address)
-        st = self.state[t.address]
+        st = self.state[self._key(t)]
         first_run = first_run or not st.seeded    # a Safe new to this config is seeded silently, whatever the others did
         out: list[Alert] = []
         live = set()
@@ -121,24 +129,27 @@ class SafeQueueWatcher:
             h = tx["safeTxHash"]
             live.add(h)
             confs = len(tx.get("confirmations") or [])
-            data = tx.get("data") or "0x"
-            call = (describe_call(data, self.CHAIN_IDS.get(t.chain), tx.get("to"), self.w3)
-                    if data not in ("0x", None) else "plain value transfer")
-            value_eth = int(tx.get("value") or 0) / 10**18
-            summary = (f"nonce {tx.get('nonce')} to {tx.get('to')} value {value_eth:,.4f} calling {call}; "
-                       f"{confs}/{threshold} signatures; proposed by {tx.get('proposer') or '?'}")
+
+            def summary() -> str:   # decoding a call costs RPC reads: only for a transaction about to alert
+                data = tx.get("data") or "0x"
+                call = (describe_call(data, self.CHAIN_IDS.get(t.chain), tx.get("to"), self.w3)
+                        if data not in ("0x", None) else "plain value transfer")
+                value_eth = int(tx.get("value") or 0) / 10**18
+                return (f"nonce {tx.get('nonce')} to {tx.get('to')} value {value_eth:,.4f} calling {call}; "
+                        f"{confs}/{threshold} signatures; proposed by {tx.get('proposer') or '?'}")
+
             if h not in st.seen:
                 st.seen[h] = confs
                 if not first_run:
                     out.append(Alert("high", self.chain_name, t.address, t.label, "SafeTxProposed", "Safe",
-                                     "new queued transaction: " + summary, 0, h))
+                                     "new queued transaction: " + summary(), 0, h))
             elif confs > st.seen[h]:
                 st.seen[h] = confs
             if confs >= threshold and threshold > 0 and h not in st.ready:
                 st.ready.add(h)
                 if not first_run:
                     out.append(Alert("critical", self.chain_name, t.address, t.label, "SafeTxExecutable", "Safe",
-                                     "queued transaction has enough signatures to execute: " + summary, 0, h))
+                                     "queued transaction has enough signatures to execute: " + summary(), 0, h))
         # forget hashes that left the queue (executed or rejected) so state stays small
         for h in list(st.seen):
             if h not in live:

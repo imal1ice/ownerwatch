@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
+from eth_abi import decoding, encoding
+from eth_abi.codec import ABICodec
+from eth_abi.registry import BaseEquals, registry as _default_registry
 from web3 import Web3
 
-from .alerts import Alert, Dispatcher
+from .alerts import Alert, Dispatcher, HeartbeatGate, redact
 from .config import Config
 from .decode import describe_call, describe_signature_call
 from .safe import SafeQueueWatcher, SafeTarget
@@ -16,6 +20,15 @@ from .events import (ADMIN_TOPICS, BY_TOPIC, DG_STATES, ERC721_TRANSFER_SPEC, ER
                      VARIANTS_BY_TOPIC)
 
 log = logging.getLogger("ownerwatch")
+
+GROW_AFTER = 20     # successful chunks in a row before trying a wider eth_getLogs range again
+
+# Decoder contracts use this codec: a proposer who puts invalid UTF-8 in a description must not make the log undecodable.
+_lenient = _default_registry.copy()
+_lenient.unregister("string")
+_lenient.register(BaseEquals("string"), encoding.TextStringEncoder, decoding.StringDecoder(handle_string_errors="replace"), label="string")
+_DECODE_W3 = Web3()
+_DECODE_W3.codec = ABICodec(_lenient)
 
 
 def _hex(v) -> str:
@@ -31,19 +44,24 @@ class Cursor:
         self.last_block: int | None = None
         self.balances: dict[str, int] = {}
         self.safes: dict = {}
+        self.outbox: list[dict] = []
         if self.path.exists():
             d = json.loads(self.path.read_text())
             self.last_block = d.get("last_block")
             self.balances = {k: int(v) for k, v in d.get("balances", {}).items()}
             self.safes = d.get("safes", {})
+            self.outbox = d.get("outbox", [])
 
     def save(self, block: int | None = None) -> None:
         if block is not None:
             self.last_block = block
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"last_block": self.last_block,
-                                         "balances": {k: str(v) for k, v in self.balances.items()},
-                                         "safes": self.safes}))
+        # write then rename: a crash mid-write must not leave a truncated cursor behind
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(json.dumps({"last_block": self.last_block,
+                                   "balances": {k: str(v) for k, v in self.balances.items()},
+                                   "safes": self.safes, "outbox": self.outbox}))
+        os.replace(tmp, self.path)
 
 
 class Watcher:
@@ -59,14 +77,19 @@ class Watcher:
         self.admin_addresses = [c.address for c in cfg.contracts]
         self._block_times: dict[int, str] = {}
         self.cursor = Cursor(cfg.state_file)
+        self.dispatcher.outbox = list(self.cursor.outbox)
+        self.should_stop = lambda: False    # the hosted runner points this at its stop event
+        self._chunk = cfg.max_block_range
+        self._chunk_ok = 0
+        self._decimals: dict[str, int | None] = {}
         # decoder contracts: one per event spec, address-less
-        self._decoders = {t: self.w3.eth.contract(abi=[s.abi]).events[s.name]() for t, s in BY_TOPIC.items()}
-        self._variants = {t: [(v, self.w3.eth.contract(abi=[v.abi]).events[v.name]()) for v in vs]
+        self._decoders = {t: _DECODE_W3.eth.contract(abi=[s.abi]).events[s.name]() for t, s in BY_TOPIC.items()}
+        self._variants = {t: [(v, _DECODE_W3.eth.contract(abi=[v.abi]).events[v.name]()) for v in vs]
                           for t, vs in VARIANTS_BY_TOPIC.items()}
-        self._transfer = self.w3.eth.contract(abi=[TRANSFER_SPEC.abi]).events.Transfer()
-        self._erc721 = self.w3.eth.contract(abi=[ERC721_TRANSFER_SPEC.abi]).events.Transfer()
-        self._e1155_single = self.w3.eth.contract(abi=[ERC1155_SINGLE_SPEC.abi]).events.TransferSingle()
-        self._e1155_batch = self.w3.eth.contract(abi=[ERC1155_BATCH_SPEC.abi]).events.TransferBatch()
+        self._transfer = _DECODE_W3.eth.contract(abi=[TRANSFER_SPEC.abi]).events.Transfer()
+        self._erc721 = _DECODE_W3.eth.contract(abi=[ERC721_TRANSFER_SPEC.abi]).events.Transfer()
+        self._e1155_single = _DECODE_W3.eth.contract(abi=[ERC1155_SINGLE_SPEC.abi]).events.TransferSingle()
+        self._e1155_batch = _DECODE_W3.eth.contract(abi=[ERC1155_BATCH_SPEC.abi]).events.TransferBatch()
         self._tokens = {}
         self._nfts = {}
         for t in cfg.treasuries:
@@ -80,45 +103,84 @@ class Watcher:
             self.safe_queue = SafeQueueWatcher([SafeTarget(s.address, s.label, s.chain) for s in cfg.safes],
                                                cfg.chain_name, cfg.safe_api_key, w3=self.w3)
             self.safe_queue.import_state(self.cursor.safes)
-            self._safe_first_run = not self.cursor.safes
 
     # ---- block range management -------------------------------------------------
-    def _start(self) -> int:
+    def _start(self, head: int) -> int:
         if self.cursor.last_block is not None:
             return self.cursor.last_block + 1
         if self.cfg.start_block == "latest":
-            return self.w3.eth.block_number - self.cfg.confirmations
+            self.cursor.save(head - 1)    # "now" is fixed on the first poll, so an outage right after start loses nothing
+            return head
         return int(self.cfg.start_block)
 
+    def _save(self, block: int | None = None) -> None:
+        self.cursor.outbox = self.dispatcher.outbox
+        self.cursor.save(block)
+
     def poll_once(self) -> int:
-        """Scan from cursor to (head - confirmations). Returns number of alerts."""
-        head = self.w3.eth.block_number - self.cfg.confirmations
-        start = self._start()
+        """Scan from cursor to (head - confirmations), then the native balances and Safe queues. Each step runs
+        even when an earlier one failed: a dead RPC must not hide the Safe queue, which has its own service.
+        Returns the number of alerts; raises the first failure once every step has had its turn."""
+        self.dispatcher.flush()
         n = 0
-        if not (self.admin_addresses or self._tokens or self._nfts):
-            head = start - 1  # nothing to scan on-chain
-        while start <= head:
-            end = min(start + self.cfg.max_block_range - 1, head)
-            n += self._scan(start, end)
-            self.cursor.save(end)
-            start = end + 1
-        n += self._check_native(head)
+        failure: Exception | None = None
+        head = None
+        try:
+            head = self.w3.eth.block_number - self.cfg.confirmations
+            if self.admin_addresses or self._tokens or self._nfts:
+                n += self.scan_range(self._start(head), head, self._save)
+        except Exception as e:  # noqa: BLE001
+            failure = e
+        if head is not None:
+            try:
+                n += self._check_native(head)
+            except Exception as e:  # noqa: BLE001
+                failure = failure or e
         n += self._check_safes()
-        self.dispatcher.heartbeat()
-        if self.dispatcher.maybe_digest(self.cfg.chain_name, head):
+        self.dispatcher.flush()
+        self._save()
+        healthy = failure is None and not self.dispatcher.outbox and (not self.safe_queue or self.safe_queue.last_poll_ok)
+        if healthy:
+            self.dispatcher.heartbeat(self.cfg.chain_name)
+        if head is not None and self.dispatcher.maybe_digest(self.cfg.chain_name, head):
             n += 1
+        if failure:
+            raise failure
+        return n
+
+    def scan_range(self, start: int, end_block: int, on_progress=None) -> int:
+        """Scan start..end_block in chunks. A range the RPC rejects is halved and retried, and the working size is
+        remembered, so an RPC that caps eth_getLogs at 10 blocks gets through any backlog; progress is saved after
+        every chunk. A failure on a single block means the RPC itself is at fault, and propagates."""
+        n = 0
+        while start <= end_block and not self.should_stop():
+            end = min(start + self._chunk - 1, end_block)
+            try:
+                n += self._scan(start, end)
+            except Exception as e:  # noqa: BLE001
+                if end == start:
+                    raise
+                self._chunk = max((end - start + 1) // 2, 1)
+                self._chunk_ok = 0
+                log.info("rpc rejected blocks %d-%d (%s); trying %d blocks", start, end, type(e).__name__, self._chunk)
+                continue
+            if on_progress:
+                on_progress(end)
+            start = end + 1
+            self._chunk_ok += 1
+            if self._chunk_ok >= GROW_AFTER and self._chunk < self.cfg.max_block_range:
+                self._chunk = min(self._chunk * 2, self.cfg.max_block_range)
+                self._chunk_ok = 0
         return n
 
     def _check_safes(self) -> int:
         if not self.safe_queue:
             return 0
-        alerts = self.safe_queue.poll(first_run=self._safe_first_run)
-        if self.safe_queue.last_poll_ok:
-            self._safe_first_run = False
+        alerts = self.safe_queue.poll()
         for a in alerts:
             self.dispatcher.send(a)
         self.cursor.safes = self.safe_queue.export_state()
-        self.cursor.save()
+        self._save()
         return len(alerts)
 
     def _check_native(self, block: int) -> int:
@@ -138,21 +200,8 @@ class Watcher:
             self.cursor.save()
         return n
 
-    def _logs(self, params: dict, from_block: int, to_block: int, budget: list[int] | None = None) -> list:
-        """eth_getLogs with bisection when the RPC rejects the range. A request
-        budget stops a dead RPC from turning one chunk into thousands of calls."""
-        budget = budget if budget is not None else [64]
-        budget[0] -= 1
-        if budget[0] < 0:
-            raise RuntimeError(f"eth_getLogs request budget exhausted around blocks {from_block}-{to_block}")
-        try:
-            return self.w3.eth.get_logs({**params, "fromBlock": from_block, "toBlock": to_block})
-        except Exception as e:  # noqa: BLE001
-            if from_block == to_block:
-                raise
-            mid = (from_block + to_block) // 2
-            log.info("rpc rejected blocks %d-%d (%s); splitting", from_block, to_block, type(e).__name__)
-            return self._logs(params, from_block, mid, budget) + self._logs(params, mid + 1, to_block, budget)
+    def _logs(self, params: dict, from_block: int, to_block: int) -> list:
+        return self.w3.eth.get_logs({**params, "fromBlock": from_block, "toBlock": to_block})
 
     def _scan(self, from_block: int, to_block: int) -> int:
         """Fetch every log for the range first, then dispatch, so a failure in
@@ -205,7 +254,23 @@ class Watcher:
             return self._decode_admin_inner(lg)
         except Exception as e:  # noqa: BLE001
             log.warning("could not decode log in tx %s: %s", _hex(lg.get("transactionHash", b"")), e)
+            return self._undecoded(lg, e)
+
+    def _undecoded(self, lg, e: Exception) -> Alert | None:
+        """The topic is in the catalog, so this is an admin event whatever its layout: raise it raw, at its usual
+        severity. Dropping it would let a contract, or a proposer's crafted input, hide the event from the watcher."""
+        t0 = _hex(lg["topics"][0])
+        spec = NOTE_SPECS.get(t0) or BY_TOPIC.get(t0)
+        if spec is None:
             return None
+        addr = Web3.to_checksum_address(lg["address"])
+        topics = ", ".join(_hex(t) for t in lg["topics"][1:]) or "none"
+        return Alert(
+            severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
+            label=self.labels.get(addr, addr), event=spec.name, source=spec.source,
+            message=f"{spec.signature} in a layout ownerwatch cannot decode ({type(e).__name__}); "
+                    f"indexed: {topics}; data: {_hex(lg['data'])[:400]}",
+            block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
 
     def _decode_admin_inner(self, lg) -> Alert | None:
         t0 = _hex(lg["topics"][0])
@@ -220,8 +285,9 @@ class Watcher:
                 break
             except Exception as e:  # noqa: BLE001
                 log.debug("log %s does not decode as %s: %s", t0, spec.source, e)
+                error = e
         else:
-            return None
+            raise error
         args = {k: (_hex(v) if isinstance(v, (bytes, bytearray)) else v) for k, v in dict(ev["args"]).items()}
         addr = Web3.to_checksum_address(lg["address"])
         if spec.name == "ProposalCreated":
@@ -268,8 +334,11 @@ class Watcher:
                     break
             if actions:
                 msg += " | actions: " + "; ".join(actions)
-        if spec.name in ("QueueTransaction", "ExecuteTransaction") and args.get("signature"):
-            msg += f" = {describe_signature_call(args['signature'], args.get('data') or b'')}"
+        if spec.name in ("QueueTransaction", "ExecuteTransaction"):
+            if args.get("signature"):
+                msg += f" = {describe_signature_call(args['signature'], args.get('data') or b'')}"
+            elif args.get("data"):   # empty signature: data is the whole calldata, selector included
+                msg += f" = {describe_call(args['data'], self.chain_id, args.get('target'), self.w3)}"
         if spec.name in ("CallScheduled", "CallExecuted"):
             msg += f" calling {describe_call(args['data'], self.chain_id, args.get('target'), self.w3)}"
         return Alert(
@@ -288,7 +357,10 @@ class Watcher:
         if "usr" in args:
             args["usr"] = Web3.to_checksum_address(args["usr"])
         if "eta" in args:
-            args["eta_iso"] = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(args["eta"])))
+            try:
+                args["eta_iso"] = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(args["eta"])))
+            except (OverflowError, OSError, ValueError):
+                args["eta_iso"] = f"timestamp {args['eta']}"
         addr = Web3.to_checksum_address(lg["address"])
         return Alert(
             severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
@@ -338,15 +410,33 @@ class Watcher:
         if not entry:
             return None
         treasury, token = entry
-        amount = ev["args"]["value"] / (10 ** token.decimals)
-        if amount < token.min_amount:
-            return None
+        decimals = self._token_decimals(token)
+        if decimals is None:   # unknown scale: the threshold cannot be judged, so do not stay quiet about it
+            shown = f"{ev['args']['value']} base units of"
+        else:
+            amount = ev["args"]["value"] / (10 ** decimals)
+            if amount < token.min_amount:
+                return None
+            shown = f"{amount:,.2f}"
         msg = TRANSFER_SPEC.describe.format(
-            amount=f"{amount:,.2f}", symbol=token.symbol, **{"from": src, "to": ev["args"]["to"]})
+            amount=shown, symbol=token.symbol, **{"from": src, "to": ev["args"]["to"]})
         return Alert(
             severity=TRANSFER_SPEC.severity, chain=self.cfg.chain_name, contract=src,
             label=treasury.label, event="Transfer", source="ERC-20", message=msg,
             block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
+
+    def _token_decimals(self, token) -> int | None:
+        """decimals from the config, else from the token itself. Guessing 18 would hide a 50M USDC transfer."""
+        if token.decimals is not None:
+            return token.decimals
+        if token.address not in self._decimals:
+            try:
+                raw = self.w3.eth.call({"to": token.address, "data": "0x313ce567"})   # decimals()
+                self._decimals[token.address] = int.from_bytes(bytes(raw), "big") if len(raw) == 32 else None
+            except Exception as e:  # noqa: BLE001
+                log.warning("decimals() failed for %s: %s", token.symbol, redact(e))
+                return None
+        return self._decimals[token.address]
 
     # ---- main loop ----------------------------------------------------------------
     def run_forever(self) -> None:
@@ -359,5 +449,20 @@ class Watcher:
                 backoff = 0
             except Exception as e:  # noqa: BLE001
                 backoff = min(backoff * 2 if backoff else 1, 16)
-                log.warning("poll failed: %s (backing off x%d)", e, backoff)
+                log.warning("poll failed: %s (backing off x%d)", redact(e), backoff)
             time.sleep(self.cfg.poll_interval_seconds * (backoff or 1))
+
+
+def build_watchers(cfgs: list[Config]) -> list[Watcher]:
+    """One Watcher per chain. Chains that share a heartbeat URL share a gate, so the URL stays healthy only when all of them are."""
+    watchers = [Watcher(c, Dispatcher(c.alerts)) for c in cfgs]
+    by_url: dict[str, list[Watcher]] = {}
+    for w in watchers:
+        if w.cfg.alerts.heartbeat_url:
+            by_url.setdefault(w.cfg.alerts.heartbeat_url, []).append(w)
+    for group in by_url.values():
+        if len(group) > 1:
+            gate = HeartbeatGate({w.cfg.chain_name for w in group})
+            for w in group:
+                w.dispatcher.heartbeat_gate = gate
+    return watchers

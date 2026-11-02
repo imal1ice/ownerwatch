@@ -49,13 +49,19 @@ jobs:
         env:
           RPC: https://mainnet.gateway.tenderly.co
         run: |
-          set +e -uo pipefail   # the stale and omission examples are meant to exit 1
+          set +e -uo pipefail
           b=$(python -c 'import json;print(json.load(open("examples/erc-8241/aave-v3-drafted.json"))["observedAtBlock"])')
-          for f in drafted stale omission; do
+          bad=0
+          # drafted must check clean; stale and omission must be caught
+          for pair in drafted:0 stale:1 omission:1; do
+            f=${pair%:*}; want=${pair#*:}
             ownerwatch disclosure check "examples/erc-8241/aave-v3-$f.json" --rpc "$RPC" --block "$b" > "examples/erc-8241/aave-v3-$f.check.txt"
-            echo "$f exit=$?"
+            got=$?
+            echo "$f exit=$got (want $want)"
             sed -n 1,3p "examples/erc-8241/aave-v3-$f.check.txt"
+            if [ "$got" != "$want" ]; then bad=1; fi
           done
+          exit $bad
       - uses: actions/upload-artifact@v4
         with:
           name: erc8241-examples

@@ -3,7 +3,7 @@
 For teams that want the alerts without running the container.
 
 ## What you get
-- The same monitor as the open-source release, run and updated by the maintainer, one process per chain.
+- The same monitor as the open-source release, run and updated by the maintainer, one watcher per chain.
 - Alerts to your Discord, Telegram or webhook within one poll interval (15 to 30 seconds) of the block.
 - A monthly `probe --markdown` report of your admin surface, so drift is caught even when no event fires.
 

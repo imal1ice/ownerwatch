@@ -80,7 +80,7 @@ Other commands:
 ownerwatch validate                         # check the config, the RPC and that every address has code
 ownerwatch test-alert                       # push a test message through your sinks
 ownerwatch run --once                       # single scan, for cron
-ownerwatch backfill --from-block N --to-block M   # replay history, prints what you would have seen
+ownerwatch backfill --from-block N --to-block M   # replay history: prints what you would have seen, and writes jsonl_path if set; never posts to webhooks
 ownerwatch events                           # list the catalog
 ```
 
@@ -100,9 +100,9 @@ ownerwatch backfill --config examples/aave-mainnet.yaml --from-block 22000000 --
 - Pick the logs RPC carefully. Some public endpoints return *incomplete* logs without an error: rpc.flashbots.net returned none for the Aave PayloadsController over a week in which Tenderly's gateway returned ten. The examples use `mainnet.gateway.tenderly.co`; verify any other endpoint with `ownerwatch backfill` against a block you know had an event.
 - Waits `confirmations` blocks behind the head so small reorgs don't produce ghost alerts.
 - Persists a block cursor to `state/`, so a restart resumes where it left off with no duplicates.
-- Alert delivery never stops the poller: a dead webhook is logged and skipped.
+- Alert delivery never stops the poller. A failed delivery is kept in the state file and retried on every poll, oldest first, until the sink takes it. A 429 waits out `Retry-After`.
 - Set `alerts.jsonl_path` and every alert is also appended to a file as one JSON line: a free archive, and the input for a static page or feed (see [admin-feed](https://github.com/imal1ice/admin-feed)).
-- Set `heartbeat_url` to a dead-man's-switch (healthchecks.io or similar) and you get paged when ownerwatch itself stops polling. Quiet and dead must not look the same.
+- Set `heartbeat_url` to a dead-man's-switch (healthchecks.io or similar) and you get paged when ownerwatch itself stops polling. It pings only after a fully healthy poll: every scan and Safe check worked and no alert is waiting for delivery. Chains that share one URL ping only when all of them are healthy. Quiet and dead must not look the same.
 - Works on any EVM chain, one process can watch several.
 
 ## Hosted tier

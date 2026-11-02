@@ -8,16 +8,20 @@ config when its file changes. Alerts go to the customer's own sinks from their Y
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
+import re
+import socket
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from web3 import Web3
 
-from .alerts import Dispatcher
-from .config import load_all
-from .watcher import Watcher
+from .alerts import redact
+from .config import Config, load_all
+from .watcher import build_watchers
 
 log = logging.getLogger("ownerwatch.hosted")
 
@@ -31,11 +35,38 @@ SUBS_ABI = [
 ]
 
 
+def _public_url(url: str) -> bool:
+    """Customer YAML is untrusted: its URLs must not reach the operator's own network or cloud metadata."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return True    # does not resolve now: nothing to reach, and a chain's RPC may be briefly down
+    return all(ipaddress.ip_address(i[4][0].split("%")[0]).is_global for i in infos)
+
+
+def _confine(cfg: Config, address: str, allow_private: bool = False) -> None:
+    """Restrict one customer's config to what the runner allows. Raises ValueError on anything else.
+    `allow_private` is for a local test chain, never for real customers."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", cfg.chain_name) or ".." in cfg.chain_name:
+        raise ValueError(f"chain_name {cfg.chain_name!r} is not a plain name")
+    al = cfg.alerts
+    for name, url in (("rpc_url", cfg.rpc_url), ("discord_webhook", al.discord_webhook), ("slack_webhook", al.slack_webhook),
+                      ("webhook_url", al.webhook_url), ("heartbeat_url", al.heartbeat_url)):
+        if url and not allow_private and not _public_url(url):
+            raise ValueError(f"{name} must be a public http(s) URL")
+    al.jsonl_path = ""      # a path on the operator's disk: not for customers
+    cfg.state_file = str(Path("state") / "hosted" / address / f"{cfg.chain_name}.json")
+
+
 class Customer:
-    def __init__(self, address: str, path: Path, max_chains: int = 0):
+    def __init__(self, address: str, path: Path, max_chains: int = 0, allow_private: bool = False):
         self.address = address
         self.path = path
         self.max_chains = max_chains
+        self.allow_private = allow_private
         self.mtime = 0.0
         self.stop = threading.Event()
         self.threads: list[threading.Thread] = []
@@ -44,16 +75,16 @@ class Customer:
         self.stop.clear()
         self.mtime = self.path.stat().st_mtime
         cfgs = load_all(self.path)
+        for cfg in cfgs:
+            _confine(cfg, self.address, self.allow_private)
         if len(cfgs) > self.max_chains:
             log.warning("%s paid for %d chains but config has %d; running the first %d",
                         self.address, self.max_chains, len(cfgs), self.max_chains)
             cfgs = cfgs[: self.max_chains]
         # build every watcher before starting any thread, so a bad chain leaves nothing running
-        watchers = []
-        for cfg in cfgs:
-            cfg.state_file = str(Path("state") / "hosted" / self.address / f"{cfg.chain_name}.json")
-            watchers.append(Watcher(cfg, Dispatcher(cfg.alerts)))
+        watchers = build_watchers(cfgs)
         for w in watchers:
+            w.should_stop = self.stop.is_set
             t = threading.Thread(target=self._loop, args=(w,), name=f"{self.address[:8]}-{w.cfg.chain_name}", daemon=True)
             t.start()
             self.threads.append(t)
@@ -64,7 +95,7 @@ class Customer:
             try:
                 w.poll_once()
             except Exception as e:  # noqa: BLE001
-                log.warning("%s poll failed: %s", w.cfg.chain_name, e)
+                log.warning("%s poll failed: %s", w.cfg.chain_name, redact(e))
             self.stop.wait(w.cfg.poll_interval_seconds)
 
     def halt(self) -> bool:
@@ -83,11 +114,13 @@ class Customer:
 
 
 class HostedRunner:
-    def __init__(self, rpc_url: str, subscriptions: str, configs_dir: str | Path, check_interval: int = 60):
+    def __init__(self, rpc_url: str, subscriptions: str, configs_dir: str | Path, check_interval: int = 60,
+                 allow_private: bool = False):
         self.w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 30}))
         self.subs = self.w3.eth.contract(address=Web3.to_checksum_address(subscriptions), abi=SUBS_ABI)
         self.dir = Path(configs_dir)
         self.interval = check_interval
+        self.allow_private = allow_private
         self.customers: dict[str, Customer] = {}
 
     def is_active(self, address: str) -> bool:
@@ -119,7 +152,7 @@ class HostedRunner:
                 paid = self.paid_chains(addr)
                 if not paid:
                     continue
-                cust = Customer(addr, path, paid)
+                cust = Customer(addr, path, paid, self.allow_private)
                 try:
                     cust.start()
                     self.customers[addr] = cust
@@ -130,6 +163,14 @@ class HostedRunner:
                 if paid is None:
                     continue
                 if cust.changed() or paid != cust.max_chains:
+                    try:
+                        for cfg in load_all(path):
+                            _confine(cfg, addr, self.allow_private)
+                    except Exception as e:  # noqa: BLE001
+                        # keep watching with the config that works; a typo must not take a paying customer offline
+                        log.error("new config for %s is invalid, keeping the old one: %s", addr, redact(e))
+                        cust.mtime = path.stat().st_mtime
+                        continue
                     if not cust.halt():
                         continue   # try again next interval
                     cust.max_chains = paid
@@ -140,11 +181,10 @@ class HostedRunner:
                         del self.customers[addr]
             elif not active and cust is not None:
                 log.info("subscription for %s lapsed", addr)
-                cust.halt()
-                del self.customers[addr]
+                if cust.halt():     # a thread still inside an RPC call: check again next interval
+                    del self.customers[addr]
         for addr in list(self.customers):
-            if addr not in files:
-                self.customers[addr].halt()
+            if addr not in files and self.customers[addr].halt():
                 del self.customers[addr]
 
     def run_forever(self) -> None:

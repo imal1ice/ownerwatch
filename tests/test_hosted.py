@@ -36,7 +36,7 @@ def test_hosted_lifecycle(anvil, tmp_path):  # noqa: F811
     cfgdir.mkdir()
     (cfgdir / f"{cust}.yaml").write_text(f"rpc_url: {w3.provider.endpoint_uri}\nchain_name: anvil\nconfirmations: 0\n"
                                         f"contracts:\n  - address: '{subs.address}'\n    label: subs\n")
-    runner = HostedRunner(w3.provider.endpoint_uri, subs.address, cfgdir, check_interval=1)
+    runner = HostedRunner(w3.provider.endpoint_uri, subs.address, cfgdir, check_interval=1, allow_private=True)
     runner.reconcile()
     assert cust not in runner.customers          # not subscribed yet
 
@@ -52,3 +52,77 @@ def test_hosted_lifecycle(anvil, tmp_path):  # noqa: F811
     w3.provider.make_request("evm_mine", [])
     runner.reconcile()
     assert cust not in runner.customers
+
+
+def _customer_yaml(tmp_path, body):
+    addr = "0x" + "12" * 20
+    from web3 import Web3
+    addr = Web3.to_checksum_address(addr)
+    p = tmp_path / f"{addr}.yaml"
+    p.write_text(body)
+    return addr, p
+
+
+def _body(extra="", chain_name="ethereum"):
+    a = "0x" + "ab" * 20
+    return f'rpc_url: "https://8.8.8.8/rpc"\nchain_name: "{chain_name}"\ncontracts: [{{address: "{a}"}}]\n{extra}'
+
+
+def _cfg(tmp_path, body):
+    from ownerwatch.config import load_all
+    addr, p = _customer_yaml(tmp_path, body)
+    return addr, load_all(p)[0]
+
+
+def test_customer_chain_name_cannot_escape_the_state_directory(tmp_path):
+    from ownerwatch.hosted import _confine
+    addr, cfg = _cfg(tmp_path, _body(chain_name="../../../../outside/owned"))
+    with pytest.raises(ValueError, match="chain_name"):
+        _confine(cfg, addr)
+
+
+def test_customer_cannot_write_files_on_the_operators_disk(tmp_path):
+    from ownerwatch.hosted import _confine
+    addr, cfg = _cfg(tmp_path, _body(f'alerts: {{jsonl_path: "{tmp_path}/owned.jsonl"}}\n'))
+    _confine(cfg, addr)
+    assert cfg.alerts.jsonl_path == "" and addr in cfg.state_file
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8545", "http://169.254.169.254/latest/meta-data", "http://10.0.0.1/x",
+                                 "file:///etc/passwd", "http://[::1]/x"])
+def test_customer_urls_cannot_reach_the_operators_network(tmp_path, url):
+    from ownerwatch.hosted import _confine
+    addr, cfg = _cfg(tmp_path, _body(f'alerts: {{webhook_url: "{url}"}}\n'))
+    with pytest.raises(ValueError, match="webhook_url"):
+        _confine(cfg, addr)
+    addr, cfg = _cfg(tmp_path, _body().replace("https://8.8.8.8/rpc", url))
+    with pytest.raises(ValueError, match="rpc_url"):
+        _confine(cfg, addr)
+
+
+def test_typo_in_a_running_customers_config_keeps_the_old_watcher(tmp_path, monkeypatch):
+    from ownerwatch import hosted
+    addr, p = _customer_yaml(tmp_path, _body())
+
+    class C:
+        halted = False
+        mtime = 0
+
+        def __init__(self):
+            self.max_chains = 1
+
+        def changed(self):
+            return True
+
+        def halt(self):
+            self.halted = True
+            return True
+
+    r = hosted.HostedRunner.__new__(hosted.HostedRunner)
+    r.dir, r.customers = tmp_path, {addr: C()}
+    r.allow_private = False
+    r.is_active = lambda a: True
+    r.paid_chains = lambda a: 1
+    p.write_text("rpc_url: [broken")
+    r.reconcile()
+    assert addr in r.customers and r.customers[addr].halted is False

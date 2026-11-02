@@ -1,6 +1,6 @@
 # /etc/systemd/system/ownerwatch.service
 # sudo useradd -r -s /usr/sbin/nologin ownerwatch
-# sudo -u ownerwatch python3 -m venv /opt/ownerwatch && /opt/ownerwatch/bin/pip install git+https://github.com/imal1ice/ownerwatch
+# sudo python3 -m venv /opt/ownerwatch && sudo /opt/ownerwatch/bin/pip install ownerwatch
 # put config.yaml in /etc/ownerwatch/ then: systemctl enable --now ownerwatch
 [Unit]
 Description=ownerwatch admin-surface monitor

@@ -139,13 +139,25 @@ def describe_call(data: bytes | str, chain_id: int | None = None, target: str | 
     return f"{name} [{sel}]" if name else f"selector {sel}"
 
 
+def _split_types(types: str) -> list[str]:
+    """Top-level parameter types: the commas inside a tuple like (address,uint256)[] do not separate parameters."""
+    out, depth, cur = [], 0, ""
+    for ch in types:
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return [t.strip() for t in [*out, cur] if t.strip()]
+
+
 def describe_signature_call(signature: str, data: bytes | str) -> str:
     """GovernorBravo/legacy Timelock style: explicit 'fn(type,type)' plus args-only calldata."""
     raw = _raw(data)
     try:
         from eth_abi import decode as abi_decode
-        types_str = signature[signature.index("(") + 1: signature.rindex(")")]
-        types = [t.strip() for t in types_str.split(",") if t.strip()]
+        types = _split_types(signature[signature.index("(") + 1: signature.rindex(")")])
         if not types:
             return signature
         try:

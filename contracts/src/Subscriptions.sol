@@ -11,7 +11,10 @@ interface IERC20 {
 /// @notice Pay a stablecoin for N 30-day periods of hosted monitoring on `chains` chains.
 ///         No accounts, no invoices: `subscribe` pulls tokens and extends `expiry[msg.sender]`.
 ///         The off-chain runner treats an address as a customer while `isActive(addr)` is
-///         true, runs at most `chainCount[addr]` chains, and reads the config it labels via `configRef`.
+///         true and runs at most `chainCount[addr]` chains. `configRef` is the customer's own label
+///         for the config they sent; the runner does not read it.
+///         `chainCount` covers the whole term: adding chains to an active subscription also pays for
+///         them over the time left, and reducing them has to wait until it lapses.
 /// @dev    Intended for USDC. Tokens that return no bool (USDT-style) are handled; fee-on-transfer
 ///         tokens are rejected because the contract requires the full amount to arrive.
 contract Subscriptions {
@@ -29,6 +32,7 @@ contract Subscriptions {
     error ZeroChains();
     error TooManyPeriods();
     error TooManyChains();
+    error CannotReduceChains(uint256 current);
     error CostAboveMax(uint256 cost, uint256 maxCost);
     error TransferFailed();
     error ShortReceived(uint256 expected, uint256 received);
@@ -63,12 +67,19 @@ contract Subscriptions {
 
     /// @notice Buy `periods` 30-day periods for `chains` chains. Extends from the current expiry
     ///         if still active, else from now. Reverts if the price moved so cost exceeds `maxCost`.
+    ///         On an active subscription, extra chains also pay pro rata for the time already bought.
     function subscribe(uint256 periods, uint256 chains, uint256 maxCost, bytes32 ref) external {
         if (periods == 0) revert ZeroPeriods();
         if (periods > MAX_PERIODS) revert TooManyPeriods();
         if (chains == 0) revert ZeroChains();
         if (chains > MAX_CHAINS) revert TooManyChains();
         uint256 cost = periods * chains * pricePerPeriod;
+        if (expiry[msg.sender] > block.timestamp) {
+            uint256 current = chainCount[msg.sender];
+            if (chains < current) revert CannotReduceChains(current);
+            uint256 left = expiry[msg.sender] - block.timestamp;
+            cost += ((chains - current) * pricePerPeriod * left + PERIOD - 1) / PERIOD;   // rounded up
+        }
         if (cost > maxCost) revert CostAboveMax(cost, maxCost);
 
         // effects

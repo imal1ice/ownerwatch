@@ -76,6 +76,33 @@ contract SubscriptionsTest is Test {
         vm.stopPrank();
     }
 
+    function test_adding_chains_pays_for_the_time_already_bought() public {
+        vm.startPrank(alice);
+        subs.subscribe(24, 1, type(uint256).max, 0);
+        // 24 periods left on 1 chain: going to 20 chains pays 19 extra chains for those 24 periods, plus the new period
+        uint256 cost = 1 * 20 * PRICE + 24 * 19 * PRICE;
+        uint256 before = usdc.balanceOf(alice);
+        vm.expectRevert(abi.encodeWithSelector(Subscriptions.CostAboveMax.selector, cost, 20 * PRICE));
+        subs.subscribe(1, 20, 20 * PRICE, 0);
+        usdc.mint(alice, cost);
+        subs.subscribe(1, 20, cost, 0);
+        assertEq(before + cost - usdc.balanceOf(alice), cost);
+        assertEq(subs.chainCount(alice), 20);
+        vm.stopPrank();
+    }
+
+    function test_chains_cannot_be_reduced_on_an_active_subscription() public {
+        vm.startPrank(alice);
+        subs.subscribe(12, 5, type(uint256).max, 0);
+        vm.expectRevert(abi.encodeWithSelector(Subscriptions.CannotReduceChains.selector, 5));
+        subs.subscribe(1, 1, type(uint256).max, 0);
+        // after the term ends a new subscription can use fewer chains
+        vm.warp(subs.expiry(alice) + 1);
+        subs.subscribe(1, 1, PRICE, 0);
+        assertEq(subs.chainCount(alice), 1);
+        vm.stopPrank();
+    }
+
     function test_lapsed_subscription_restarts_from_now() public {
         vm.startPrank(alice);
         subs.subscribe(1, 1, PRICE, 0);
