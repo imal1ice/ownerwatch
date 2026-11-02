@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-11-02
+
 A full audit of the watcher, the probe and the disclosure checker. The theme: a quiet result must mean nothing happened, never that something failed.
 
 ### Watcher
@@ -33,6 +35,7 @@ A full audit of the watcher, the probe and the disclosure checker. The theme: a 
 - `delay()`, `getDelay()` and `minDelay()` make a timelock only with timelock functions behind them, so a parameter named `delay` no longer hides the owner's key. Wording fixed: 2-of-4 is half, not fewer than half; 1800s is 30m, not 0h; a timelock with an EOA admin is not "no timelock".
 - `--config` now honours `--roles-from-logs`, `--role-candidates`, `--logs-rpc` and `--chain-name`, and names the chain from its id when `chain_name` was left at its default.
 - Reports gain a **Full facts** block: every control fact with full addresses, one line each. The ownerwatch Action compares it. Owner and pending owner also appear in the table.
+- A report states each AccessManager finding once, on the manager, not once per target.
 
 ### ERC-8241
 - AccessManager roles are drafted, checked and counted for completeness (`accessManager:<id>`). Node kinds `aragon-app` and `access-manager` map to `CONTRACT`, so a real stETH draft checks clean.
