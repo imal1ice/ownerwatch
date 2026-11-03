@@ -39,7 +39,7 @@ Timelock and Safe-queue alerts show the call being made: full function and argum
 
 Run `ownerwatch events` to print the catalog.
 
-**ERC-8241 disclosures.** `ownerwatch disclosure draft` writes an [ERC-8241](https://ethereum-magicians.org/t/erc-8241-protocol-control-disclosure/28343) control disclosure from chain state, and `ownerwatch disclosure check` verifies one at a pinned block, including powers observed on-chain that the disclosure leaves out. See [docs/erc-8241.md](docs/erc-8241.md).
+**ERC-8241 disclosures.** `ownerwatch disclosure draft` writes an [ERC-8241](https://ethereum-magicians.org/t/erc-8241-protocol-control-disclosure/28343) control disclosure from chain state, and `ownerwatch disclosure check` verifies one at a pinned block, including powers observed on-chain that the disclosure leaves out. See [docs/erc-8241.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/erc-8241.md).
 
 ## Quick start
 
@@ -49,7 +49,7 @@ ownerwatch probe --rpc https://eth.drpc.org --yaml --label Acme 0xYourProxy 0xYo
 ownerwatch run --config config.yaml
 ```
 
-Add a Discord, Slack or Telegram target under `alerts` in `config.yaml`. Every option is in [config.example.yaml](config.example.yaml).
+Add a Discord, Slack or Telegram target under `alerts` in `config.yaml`. Every option is in [config.example.yaml](https://github.com/imal1ice/ownerwatch/blob/main/config.example.yaml).
 
 Or with Docker, from a clone of this repository:
 
@@ -86,7 +86,7 @@ ownerwatch backfill --from-block N --to-block M   # replay history: prints what 
 ownerwatch events                           # list the catalog
 ```
 
-See [docs/what-to-watch.md](docs/what-to-watch.md) for the control-graph model behind the catalog, [docs/safe-1-4-1-events.md](docs/safe-1-4-1-events.md) for a decoding trap that silently hides Safe signer changes, and [docs/sample-alerts.md](docs/sample-alerts.md) for real alerts replayed from mainnet history.
+See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/what-to-watch.md) for the control-graph model behind the catalog, [docs/safe-1-4-1-events.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/safe-1-4-1-events.md) for a decoding trap that silently hides Safe signer changes, and [docs/sample-alerts.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/sample-alerts.md) for real alerts replayed from mainnet history.
 
 ## Examples
 
@@ -110,7 +110,7 @@ ownerwatch backfill --config examples/compound-mainnet.yaml --from-block 2576800
 
 ## Hosted tier
 
-ownerwatch includes what it takes to run it as a paid service for others: a subscription contract, `contracts/src/Subscriptions.sol` (approve USDC, call `subscribe(periods, chains, maxCost, configRef)`), and an operator runner, `ownerwatch hosted --rpc ... --subscriptions 0x... --configs configs/`, which starts a watcher for every address with an active subscription and stops it when the subscription lapses. Details in [docs/hosted.md](docs/hosted.md). No deployment is operated from this repository.
+ownerwatch includes what it takes to run it as a paid service for others: a subscription contract, `contracts/src/Subscriptions.sol` (approve USDC, call `subscribe(periods, chains, maxCost, configRef)`), and an operator runner, `ownerwatch hosted --rpc ... --subscriptions 0x... --configs configs/`, which starts a watcher for every address with an active subscription and stops it when the subscription lapses. Details in [docs/hosted.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/hosted.md). No deployment is operated from this repository.
 
 ```bash
 cd contracts && forge install foundry-rs/forge-std --no-git && forge test

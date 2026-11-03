@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.11.1 - 2026-11-03
+
+Documentation only; no code changes. The PyPI page now shows the quick start that works from an empty directory and the demo that prints alerts, and its links to the docs resolve.
+
 ## 0.11.0 - 2026-11-02
 
 A full audit of the watcher, the probe and the disclosure checker. The theme: a quiet result must mean nothing happened, never that something failed.
