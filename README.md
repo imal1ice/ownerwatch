@@ -37,7 +37,7 @@ Every address in your config gets the full catalog:
 
 Timelock and Safe-queue alerts show the call being made: full function and arguments when the target is verified on Sourcify, otherwise the signature from the openchain and 4byte databases, otherwise the raw selector. Set `explorer_url` and every alert carries a clickable transaction link.
 
-Run `ownerwatch events` to print the catalog.
+Run `ownerwatch events` to print the catalog. Your own admin events go under `custom_events` in the config, by Solidity signature or, for an unverified contract, by topic0; see [config.example.yaml](https://github.com/imal1ice/ownerwatch/blob/main/config.example.yaml).
 
 **ERC-8241 disclosures.** `ownerwatch disclosure draft` writes an [ERC-8241](https://ethereum-magicians.org/t/erc-8241-protocol-control-disclosure/28343) control disclosure from chain state, and `ownerwatch disclosure check` verifies one at a pinned block, including powers observed on-chain that the disclosure leaves out. See [docs/erc-8241.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/erc-8241.md).
 

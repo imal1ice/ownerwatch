@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 from web3 import Web3
+
+from .events import ADMIN_TOPICS, _norm, topic0
 
 
 @dataclass
@@ -57,6 +60,14 @@ class Alerts:
 
 
 @dataclass
+class CustomEvent:
+    name: str
+    topic0: str                # 0x + 64 lowercase hex
+    severity: str = "high"
+    abi: dict | None = None    # None: known only by topic0, so alerts carry the raw log
+
+
+@dataclass
 class Config:
     rpc_url: str
     chain_name: str = "ethereum"
@@ -72,6 +83,7 @@ class Config:
     safes: list[Safe] = field(default_factory=list)
     safe_api_key: str = ""
     alerts: Alerts = field(default_factory=Alerts)
+    custom_events: list[CustomEvent] = field(default_factory=list)
 
     def labels(self) -> dict[str, str]:
         out = {c.address: c.label for c in self.contracts}
@@ -84,7 +96,7 @@ def _addr(a: str) -> str:
     return Web3.to_checksum_address(a)
 
 
-SHARED_KEYS = ("explorer_url", "poll_interval_seconds", "confirmations", "max_block_range", "start_block", "alerts", "safe_api_key")
+SHARED_KEYS = ("custom_events", "explorer_url", "poll_interval_seconds", "confirmations", "max_block_range", "start_block", "alerts", "safe_api_key")
 CHAIN_KEYS = {"rpc_url", "chain_name", "probe_rpc_url", "state_file", "contracts", "treasuries", "safes", *SHARED_KEYS}
 SEVERITY_LEVELS = ("info", "medium", "high", "critical")
 # Safe Transaction Service key for a chain_name, so a Safe on a Base config does not default to Ethereum's service.
@@ -93,6 +105,64 @@ SAFE_CHAIN_KEYS = {"ethereum": "eth", "mainnet": "eth", "base": "base", "arbitru
                    "linea": "linea", "mantle": "mantle", "celo": "celo", "aurora": "aurora", "sonic": "sonic",
                    "zksync": "zksync", "berachain": "berachain", "ink": "ink", "unichain": "unichain", "hemi": "hemi"}
 SAFE_KEY_ALIASES = {"matic": "pol"}   # the service renamed it; the old key answers 404
+
+
+MAX_CUSTOM_EVENTS = 50     # each one widens every eth_getLogs filter
+_ABI_TYPE = re.compile(r"(address|bool|string|bytes([1-9]|[12][0-9]|3[0-2])?|u?int([1-9][0-9]{0,2})?)(\[[0-9]*\])*")
+
+
+def _parse_event(text: str) -> tuple[str, dict]:
+    """`ForceBurned(address indexed account, uint256 amount)` to its canonical signature and ABI fragment."""
+    m = re.fullmatch(r"\s*(?:event\s+)?([A-Za-z_$][\w$]*)\s*\((.*)\)\s*;?\s*", text, re.S)
+    if not m:
+        raise ValueError(f"custom event {text!r}: write it like ForceBurned(address indexed account, uint256 amount)")
+    name, body = m.groups()
+    if "(" in body:
+        raise ValueError(f"custom event {name}: tuples are not supported here; use topic0: and name: to get the raw log")
+    inputs = []
+    for n, part in enumerate(p for p in body.split(",") if p.strip()):
+        words = part.split()
+        indexed = "indexed" in words[1:]
+        rest = [w for w in words[1:] if w != "indexed"]
+        if not _ABI_TYPE.fullmatch(words[0]) or len(rest) > 1:
+            raise ValueError(f"custom event {name}: cannot read {part.strip()!r}")
+        typ = re.sub(r"^(u?int)(?![0-9])", r"\g<1>256", words[0])
+        inputs.append({"name": rest[0] if rest else f"arg{n}", "type": typ, "indexed": indexed})
+    if sum(i["indexed"] for i in inputs) > 3:
+        raise ValueError(f"custom event {name}: an event has at most 3 indexed arguments")
+    signature = f"{name}({','.join(i['type'] for i in inputs)})"
+    return signature, {"anonymous": False, "type": "event", "name": name, "inputs": inputs}
+
+
+def _custom_events(raw: list) -> list[CustomEvent]:
+    if len(raw) > MAX_CUSTOM_EVENTS:
+        raise ValueError(f"custom_events: {len(raw)} entries, at most {MAX_CUSTOM_EVENTS}")
+    out: list[CustomEvent] = []
+    for e in raw:
+        _known(e, ("event", "topic0", "name", "severity"), f"custom event {e.get('event') or e.get('name')}")
+        if bool(e.get("event")) == bool(e.get("topic0")):
+            raise ValueError(f"custom event {e.get('event') or e.get('name')}: set either event: or topic0: with name:")
+        severity = e.get("severity", "high")
+        if severity not in SEVERITY_LEVELS:
+            raise ValueError(f"custom event {e.get('event') or e.get('name')}: severity must be one of {', '.join(SEVERITY_LEVELS)}")
+        if e.get("event"):
+            if e.get("name"):
+                raise ValueError(f"custom event {e['event']}: name: goes with topic0:; event: already names it")
+            signature, abi = _parse_event(str(e["event"]))
+            ev = CustomEvent(abi["name"], _norm(topic0(signature)), severity, abi)
+        else:
+            t0 = str(e["topic0"]).lower()
+            if not re.fullmatch(r"0x[0-9a-f]{64}", t0):
+                raise ValueError(f"custom event {e.get('name')}: topic0 must be 0x and 64 hex characters")
+            if not e.get("name"):
+                raise ValueError(f"custom event {t0}: add name:, it is what the alert shows")
+            ev = CustomEvent(str(e["name"]), t0, severity)
+        if ev.topic0 in ADMIN_TOPICS:
+            raise ValueError(f"custom event {ev.name}: already in the built-in catalog, remove it (see `ownerwatch events`)")
+        if ev.topic0 in {o.topic0 for o in out}:
+            raise ValueError(f"custom event {ev.name}: listed twice")
+        out.append(ev)
+    return out
 
 
 def _known(raw: dict, keys, where: str) -> None:
@@ -192,6 +262,7 @@ def _build(raw: dict) -> Config:
         safes=safes,
         safe_api_key=str(raw.get("safe_api_key", "") or ""),
         alerts=alerts,
+        custom_events=_custom_events(raw.get("custom_events") or []),
     )
     if not cfg.contracts and not cfg.treasuries and not cfg.safes:
         raise ValueError("config has nothing to watch: add contracts, treasuries or safes")

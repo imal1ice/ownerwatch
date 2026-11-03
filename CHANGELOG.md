@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-11-03
+
+- `custom_events` in the config: alert on a protocol's own admin events, by Solidity signature or, for an unverified contract, by topic0. A log that does not match its declared layout still alerts, raw.
+- `backfill` reports a failed read in one line and exits 2, without a traceback or the RPC key.
+
 ## 0.11.1 - 2026-11-03
 
 Documentation only; no code changes. The PyPI page now shows the quick start that works from an empty directory and the demo that prints alerts, and its links to the docs resolve.

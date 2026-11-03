@@ -90,6 +90,9 @@ class Watcher:
         self._decoders = {t: _DECODE_W3.eth.contract(abi=[s.abi]).events[s.name]() for t, s in BY_TOPIC.items()}
         self._variants = {t: [(v, _DECODE_W3.eth.contract(abi=[v.abi]).events[v.name]()) for v in vs]
                           for t, vs in VARIANTS_BY_TOPIC.items()}
+        self._custom = {e.topic0: (e, _DECODE_W3.eth.contract(abi=[e.abi]).events[e.name]() if e.abi else None)
+                        for e in cfg.custom_events}
+        self._admin_topics = [*ADMIN_TOPICS, *self._custom]
         self._transfer = _DECODE_W3.eth.contract(abi=[TRANSFER_SPEC.abi]).events.Transfer()
         self._erc721 = _DECODE_W3.eth.contract(abi=[ERC721_TRANSFER_SPEC.abi]).events.Transfer()
         self._e1155_single = _DECODE_W3.eth.contract(abi=[ERC1155_SINGLE_SPEC.abi]).events.TransferSingle()
@@ -213,7 +216,7 @@ class Watcher:
         one query can never re-send alerts from another."""
         alerts: list[Alert] = []
         if self.admin_addresses:
-            for lg in self._logs({"address": self.admin_addresses, "topics": [ADMIN_TOPICS]}, from_block, to_block):
+            for lg in self._logs({"address": self.admin_addresses, "topics": [self._admin_topics]}, from_block, to_block):
                 a = self._decode_admin(lg)
                 if a:
                     alerts.append(a)
@@ -279,6 +282,8 @@ class Watcher:
 
     def _decode_admin_inner(self, lg) -> Alert | None:
         t0 = _hex(lg["topics"][0])
+        if t0 in self._custom:
+            return self._decode_custom(lg, *self._custom[t0])
         if t0 in NOTE_SPECS:
             return self._decode_note(lg, NOTE_SPECS[t0])
         if t0 not in BY_TOPIC:
@@ -349,6 +354,23 @@ class Watcher:
         return Alert(
             severity=spec.severity, chain=self.cfg.chain_name, contract=addr,
             label=self.labels.get(addr, addr), event=spec.name, source=spec.source,
+            message=msg, block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
+
+    def _decode_custom(self, lg, event, decoder) -> Alert:
+        """An event the config names. Config text never reaches str.format; the message is only the log's own values."""
+        topics = ", ".join(_hex(t) for t in lg["topics"][1:]) or "none"
+        msg = f"indexed: {topics}; data: {_hex(lg['data'])[:400]}"
+        if decoder:
+            try:
+                args = dict(decoder.process_log(lg)["args"])
+                msg = ", ".join(f"{k}={_hex(v) if isinstance(v, (bytes, bytearray)) else v}" for k, v in args.items()) or event.name
+            except Exception as e:  # noqa: BLE001
+                log.warning("custom event %s does not match its config signature: %s", event.name, e)
+                msg = f"layout differs from the signature in the config ({type(e).__name__}); {msg}"
+        addr = Web3.to_checksum_address(lg["address"])
+        return Alert(
+            severity=event.severity, chain=self.cfg.chain_name, contract=addr,
+            label=self.labels.get(addr, addr), event=event.name, source="custom",
             message=msg, block=lg["blockNumber"], tx_hash=self._link(_hex(lg["transactionHash"])))
 
     def _decode_note(self, lg, spec) -> Alert | None:

@@ -42,6 +42,14 @@ safes:
     chain: "eth"
 safe_api_key: ""                # not required today; supported if Safe starts enforcing it
 
+# Your own admin events, on top of the built-in catalog (`ownerwatch events` lists it). They are watched on every
+# address under contracts:. Severity defaults to high.
+# custom_events:
+#   - event: "ForceBurned(address indexed account, uint256 amount)"
+#     severity: critical
+#   - topic0: "0x2fb09e307af03d6433da7437d1b14ef707fd08bafbda7722932bcdbc885d5bb4"   # unverified contract: raw log
+#     name: "LimitsUpdated"
+
 # Where alerts go. Any combination; stdout is always on.
 alerts:
   discord_webhook: ""            # https://discord.com/api/webhooks/...

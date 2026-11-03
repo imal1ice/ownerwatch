@@ -202,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
         for cfg in cfgs:
             sinks = [k for k in ("discord_webhook", "slack_webhook", "telegram_bot_token", "webhook_url", "jsonl_path") if getattr(cfg.alerts, k)]
             print(f"{cfg.chain_name}: {len(cfg.contracts)} contracts, {len(cfg.treasuries)} treasuries, {len(cfg.safes)} safes, sinks: {', '.join(sinks) or 'stdout only'}")
+            if cfg.custom_events:
+                print(f"  custom events: {', '.join(e.name for e in cfg.custom_events)}")
             try:
                 w3 = Web3(Web3.HTTPProvider(cfg.rpc_url, request_kwargs={"timeout": 15}))
                 chain_id = w3.eth.chain_id
@@ -241,7 +243,12 @@ def main(argv: list[str] | None = None) -> int:
         quiet = dataclasses.replace(cfg.alerts, discord_webhook="", slack_webhook="", telegram_bot_token="", telegram_chat_id="",
                                     webhook_url="", heartbeat_url="", daily_digest=False)
         w = Watcher(cfg, Dispatcher(quiet))
-        n = w.scan_range(a.from_block, a.to_block)
+        try:
+            n = w.scan_range(a.from_block, a.to_block)
+        except Exception as e:  # noqa: BLE001
+            print(f"error: could not read blocks {a.from_block}-{a.to_block}: {redact(e)}. "
+                  "Backfill needs an RPC that serves old logs; a failed read says nothing about what happened.", file=sys.stderr)
+            return 2
         print(f"{n} alerts in blocks {a.from_block}-{a.to_block}", file=sys.stderr)
         return 0
     watchers = build_watchers(cfgs)
