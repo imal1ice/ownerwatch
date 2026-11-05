@@ -388,5 +388,23 @@ contract GetAdminLike {
 
     function getAdmin() external view returns (address) {
         return holder;
+/// An UpgradeableBeacon as proxies read it: implementation() and owner().
+contract BeaconLike {
+    address public implementation;
+    address public owner = msg.sender;
+    function upgradeTo(address impl) external { implementation = impl; }
+}
+
+/// Compound-style Timelock: admin() and delay(), transactions queued by hash.
+contract CompoundTimelockLike {
+    address public admin = msg.sender;
+    uint256 public delay = 172800;
+    mapping(bytes32 => bool) public queuedTransactions;
+    function setDelay(uint256 d) external { delay = d; }
+    function queueTransaction(address target, uint256 value, string calldata signature, bytes calldata data, uint256 eta)
+        external returns (bytes32 h)
+    {
+        h = keccak256(abi.encode(target, value, signature, data, eta));
+        queuedTransactions[h] = true;
     }
 }
