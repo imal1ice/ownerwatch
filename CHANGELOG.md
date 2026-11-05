@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0 - 2026-11-05
+
 - `probe` reads `getAdmin()` when a contract has no `admin()`: some UUPS proxies gate upgrades on it, and the path was invisible.
 - `probe --foundry` prints `AdminSurface.t.sol`, a self-contained Foundry test pinning the admin surface the probe read at one block: owners, ERC-1967 slots, role holders, Safe signers, thresholds and modules, timelock delays, AccessManager roles. On a fork (`OWNERWATCH_RPC_URL`) `forge test` fails naming what changed; anything it cannot pin is listed as `// not pinned: <why>`.
 

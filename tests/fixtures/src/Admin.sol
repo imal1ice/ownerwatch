@@ -388,6 +388,9 @@ contract GetAdminLike {
 
     function getAdmin() external view returns (address) {
         return holder;
+    }
+}
+
 /// An UpgradeableBeacon as proxies read it: implementation() and owner().
 contract BeaconLike {
     address public implementation;
