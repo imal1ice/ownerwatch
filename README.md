@@ -88,6 +88,14 @@ ownerwatch events                           # list the catalog
 
 See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/what-to-watch.md) for the control-graph model behind the catalog, [docs/safe-1-4-1-events.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/safe-1-4-1-events.md) for a decoding trap that silently hides Safe signer changes, and [docs/sample-alerts.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/sample-alerts.md) for real alerts replayed from mainnet history.
 
+## Guides
+
+- [Moving admin-event monitors off OpenZeppelin Defender](https://github.com/imal1ice/ownerwatch/blob/main/docs/migrate-from-defender.md): what maps, what does not, and OpenZeppelin's own recommended path
+- [Alert on Safe signer and threshold changes](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-signers.md)
+- [Alert on proxy and beacon upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md)
+- [Alert on role grants: AccessControl and AccessManager](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-role-grants.md)
+- [See scheduled timelock calls before they run](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md)
+
 ## Examples
 
 `examples/` has verified configs for Uniswap, Compound, Arbitrum, Aave and the Optimism Foundation Safe on mainnet. Backfill one to see what alerts look like on real history:
