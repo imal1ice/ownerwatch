@@ -115,6 +115,7 @@ See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/doc
 - [Alert on proxy and beacon upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md)
 - [Alert on role grants: AccessControl and AccessManager](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-role-grants.md)
 - [See scheduled timelock calls before they run](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md)
+- [Pre-audit control checklist](https://github.com/imal1ice/ownerwatch/blob/main/docs/pre-audit-control-checklist.md): a yes/no checklist for the ownership, upgrade, role, multisig and timelock surface, to run before an audit and before each deploy
 ## Curator collateral report
 
 A Morpho vault lends its depositors' money against collateral tokens, so whoever can mint, upgrade or pause those tokens is part of the vault's risk. `ownerwatch collateral` maps that for one vault, from chain state alone:
