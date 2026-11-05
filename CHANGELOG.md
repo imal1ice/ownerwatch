@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ownerwatch collateral <vault>`: a curator collateral report for MetaMorpho V1 and Morpho Vault V2. Finds the vault's markets from chain state, ranks its collateral by allocation, and shows who can mint, upgrade or pause each token (and what it wraps) with any timelock delay, each market's oracle and its owner, and a config that watches all of it. Every read is at one pinned block; a failed read is reported, never clean. `make_w3` keeps the chain id after the first request: web3 asked for it before every `eth_call`.
+
 ## 0.12.1 - 2026-11-05
 
 - `probe` tests a plain `ADMIN_ROLE` by name, so a probe without a log replay finds its holders.

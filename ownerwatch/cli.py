@@ -60,6 +60,16 @@ def main(argv: list[str] | None = None) -> int:
                          "(the protocol's Safes and keys from docs or other chains)")
     pr.add_argument("--logs-rpc", default=None,
                     help="with --roles-from-logs: RPC used only for eth_getLogs, e.g. https://mainnet.gateway.tenderly.co (full history, large blocks per call)")
+    co = sub.add_parser("collateral", help="who can mint, upgrade or pause the collateral behind a Morpho vault (V1 or V2), ranked by allocation")
+    co.add_argument("vault", help="MetaMorpho V1 or Morpho Vault V2 address")
+    co.add_argument("--rpc", required=True)
+    co.add_argument("--block", type=int, default=None, help="pin every read to this block (default: 5 blocks behind the head)")
+    co.add_argument("--markdown", action="store_true", help="print the report in Markdown")
+    co.add_argument("--yaml", action="store_true",
+                    help="print a config that watches every collateral token, its controllers and oracles (after the report with --markdown)")
+    co.add_argument("--roles-from-logs", action="store_true",
+                    help="replay RoleGranted/RoleRevoked logs up to the pinned block for each collateral token (needs an RPC with log history)")
+    co.add_argument("--logs-rpc", default=None, help="with --roles-from-logs: RPC used only for eth_getLogs")
     ds = sub.add_parser("disclosure", help="ERC-8241 control disclosures: draft one from chain state, or check one against it")
     dsub = ds.add_subparsers(dest="dcmd", required=True)
     dd = dsub.add_parser("draft", help="write a starting ERC-8241 disclosure (JSON) for these addresses")
@@ -101,6 +111,30 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(json.dumps(report, indent=2) if a.json else render(report))
         return 1 if report["summary"]["mismatch"] or report["summary"]["undisclosed"] else 0
+
+    if a.cmd == "collateral":
+        from .collateral import NotAVault, build
+        from .probe import make_w3
+        try:
+            rep = build(make_w3(a.rpc), a.vault, a.block, log=lambda m: print(m, file=sys.stderr), roles_from_logs=a.roles_from_logs,
+                        logs_w3=make_w3(a.logs_rpc, 60) if a.logs_rpc else None)
+        except NotAVault as e:
+            print(f"error: {e}. Only MetaMorpho V1 and Morpho Vault V2 are covered.", file=sys.stderr)
+            return 2
+        except (RuntimeError, ValueError, OSError, requests.RequestException, Web3Exception) as e:
+            # the vault itself could not be read: there is no partial report worth printing
+            print(f"error: could not read the vault: {redact(e)}", file=sys.stderr)
+            return 2
+        if a.markdown:
+            print(rep.markdown())
+            if a.yaml:
+                print(f"## Watch config\n\n```yaml\n{rep.config(a.rpc)}```")
+        elif a.yaml:
+            print(rep.config(a.rpc), end="")
+        else:
+            print(rep.text(), end="")
+        # 2: something is missing from the report (a failed read, an unmapped adapter, a gap in the books)
+        return 0 if rep.complete else 2
 
     if a.cmd == "events":
         for s in [*CATALOG, *VARIANTS, *NOTE_SPECS.values()]:
