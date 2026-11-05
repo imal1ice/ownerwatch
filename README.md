@@ -106,6 +106,24 @@ See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/doc
 - [Alert on proxy and beacon upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md)
 - [Alert on role grants: AccessControl and AccessManager](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-role-grants.md)
 - [See scheduled timelock calls before they run](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md)
+## Curator collateral report
+
+A Morpho vault lends its depositors' money against collateral tokens, so whoever can mint, upgrade or pause those tokens is part of the vault's risk. `ownerwatch collateral` maps that for one vault, from chain state alone:
+
+```bash
+ownerwatch collateral 0xVault --rpc https://ethereum-rpc.publicnode.com --markdown > collateral.md
+ownerwatch collateral 0xVault --rpc https://ethereum-rpc.publicnode.com --yaml > config.yaml   # watch every collateral token
+```
+
+- **Markets.** MetaMorpho V1: `withdrawQueue` and `supplyQueue`. Morpho Vault V2: each market adapter's market ids, and through a vault adapter the markets of the vault it holds shares in. Allocations come from Morpho Blue `position` and `market`, in loan-token units, and their sum is checked against `totalAssets()`. Any other adapter is reported as not mapped.
+- **Each collateral token, ranked by allocation:** owner and `DEFAULT_ADMIN_ROLE` holders, upgrade admin, who can mint and who can pause, each walked up to a key or a Safe with any timelock delay on the way, plus the probe's findings. Wrappers are followed to what they wrap: ERC-4626 `asset()`, wstETH, Pendle PT to SY to the yield token.
+- **Who can mint or pause** comes from roles, getters (`minter()`, `masterMinter()`, `pauser()`, `isMinter`), and `eth_call` simulations at the pinned block from every controller found. A simulated success is shown; a revert proves nothing and is not reported. On AccessControl contracts that do not list their members, every account the Blockscout or Routescan log index saw granted a role is tested with `hasRole` at the pinned block, so a stale index cannot add a holder.
+- **Oracles:** each market's oracle with its owner and upgrade admin, and the owners of the feeds a MorphoChainlinkOracleV2 reads.
+- **One block.** Every read is at one pinned block, printed at the top (default: 5 behind the head; `--block N` to choose). A non-archive RPC keeps recent state only (about 120 blocks on publicnode's Ethereum endpoint), which a run normally fits in; a read past that fails and says so.
+- **Failures are never clean.** A read that fails, an adapter it cannot map, books that do not reconcile, and anything it could not establish (a role nobody in the report holds, an upgrade gate no controller passes) are listed in the report, and the command exits 2.
+- `--yaml` writes a config that watches the vault, every collateral and wrapped token, the contracts and Safes above them, and the oracles. With `--markdown --yaml` the config follows the report.
+
+Not covered: Vault V2 caps (a market the curator has capped but not funded may not appear), AccessManager role holders beyond the addresses in the report, and adapters other than Morpho market and vault adapters.
 
 ## Examples
 

@@ -124,6 +124,10 @@ def make_w3(url: str, timeout: int = 30) -> Web3:
     """A Web3 client that also reads blocks on chains with long extraData (Polygon, BSC and other PoA chains)."""
     w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": timeout}))
     w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    # web3 validates every eth_call against the chain id and asks the node for it each time: over half of a long
+    # probe's requests. The chain id of an RPC URL does not change, so it is the one answer kept.
+    w3.provider.cache_allowed_requests = True
+    w3.provider.cacheable_requests = {"eth_chainId"}
     return w3
 
 
@@ -248,10 +252,13 @@ class Prober:
         """None when the call reverts or returns nothing: the contract has no such function. A rate limit, pruned
         state or a dead RPC is a different thing, and reading it as "no such function" would turn a real owner
         into a clean report. Those are retried, then raised."""
+        return self._try_call(tx) or None
+
+    def _try_call(self, tx: dict) -> bytes | None:
+        """Like _eth_call, but a call that succeeds with no return data (a mint() that returns nothing) is b"", not None."""
         for attempt in range(3):
             try:
-                r = self.w3.eth.call(tx)
-                return bytes(r) if r else None
+                return bytes(self.w3.eth.call(tx))
             except Exception as e:  # noqa: BLE001
                 if _is_revert(e):
                     return None
@@ -972,7 +979,16 @@ class Prober:
                 self.probe(n.authority)   # its role holders are resolved in check_roles
             for module in n.safe_modules:
                 c = self.probe(module)
-                n.notes.append(f"Safe module {module} ({'an EOA' if c.kind == 'eoa' else c.kind}) can execute without the signers")
+                cooldown = self._uint(module, "txCooldown()") if c.kind != "eoa" else None
+                if cooldown is not None and self._call(module, "queueNonce()") is not None:
+                    # Zodiac Delay modifier: its own modules queue, anyone executes after the cooldown. A recovery path, not a bypass.
+                    queuers = self._safe_modules(module)
+                    for q in queuers:
+                        self.probe(q)
+                    n.notes.append(f"Safe module {module} is a Zodiac Delay modifier: transactions queued by "
+                                   f"{', '.join(queuers) or 'its modules (none enabled)'} execute without the signers after a {_dur(cooldown)} cooldown")
+                else:
+                    n.notes.append(f"Safe module {module} ({'an EOA' if c.kind == 'eoa' else c.kind}) can execute without the signers")
             for ctl, roles in links.items():
                 c = self.probe(ctl)
                 what = " and ".join(roles)
