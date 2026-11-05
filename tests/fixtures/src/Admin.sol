@@ -377,3 +377,16 @@ contract ModuleWithSafe {
     address public safe;
     function set(address a) external { safe = a; }
 }
+
+// A UUPS-style proxy whose upgrade gate answers to getAdmin() and has no admin() or owner().
+contract GetAdminLike {
+    address public immutable holder;
+
+    constructor(address holder_) {
+        holder = holder_;
+    }
+
+    function getAdmin() external view returns (address) {
+        return holder;
+    }
+}

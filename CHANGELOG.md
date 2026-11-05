@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `probe` reads `getAdmin()` when a contract has no `admin()`: some UUPS proxies gate upgrades on it, and the path was invisible.
+
 ## 0.12.1 - 2026-11-05
 
 - `probe` tests a plain `ADMIN_ROLE` by name, so a probe without a log replay finds its holders.

@@ -269,6 +269,20 @@ def test_multisig_role_admin_outside_the_timelock_is_a_finding(anvil, artifacts)
     assert "No single-key or zero-delay" not in markdown_report(p, "T", "anvil", [n])
 
 
+def test_get_admin_is_read_when_admin_is_absent(anvil, artifacts):  # noqa: F811
+    """Some UUPS proxies gate upgrades on getAdmin() with no admin() or owner(): missing it reads as "nobody controls this"."""
+    w3 = anvil
+    holder = w3.eth.accounts[1]
+    abi, bytecode = artifacts["GetAdminLike"]
+    tx = w3.eth.contract(abi=abi, bytecode=bytecode).constructor(holder).transact({"from": w3.eth.accounts[0]})
+    box = w3.eth.wait_for_transaction_receipt(tx).contractAddress
+    p = Prober(w3)
+    n = p.probe(box)
+    assert n.admin == holder
+    assert any(x.startswith(f"getAdmin() is an EOA {holder}") for x in n.notes), n.notes
+    assert holder in markdown_report(p, "T", "anvil", [n])
+
+
 def test_admin_role_found_by_name_and_eoa_findings_do_not_claim_one_key(anvil, artifacts):  # noqa: F811
     """A plain ADMIN_ROLE is tested by name, so a reads-only probe finds it. The chain shows an address, not how its
     key is held, so an EOA finding says what the chain shows and leaves room for an MPC wallet."""

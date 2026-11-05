@@ -192,6 +192,7 @@ class Node:
     owner: str | None = None
     pending_owner: str | None = None
     admin: str | None = None
+    admin_getter: str = "admin()"       # which getter named the admin: some UUPS proxies expose getAdmin() instead
     safe_threshold: int | None = None
     safe_owners: list[str] = field(default_factory=list)
     safe_modules: list[str] = field(default_factory=list)   # modules execute without the signers
@@ -938,6 +939,10 @@ class Prober:
                 n.wards.append(SKY_PAUSE_PROXY)
         if n.admin is None:
             n.admin = n.proxy_admin or self._addr(address, "admin()") if n.kind != "safe" else None
+            if n.admin is None and n.kind != "safe":
+                n.admin = self._addr(address, "getAdmin()")
+                if n.admin:
+                    n.admin_getter = "getAdmin()"
         p = self._call(address, "paused()")
         if p is not None and len(p) == 32:
             n.paused = bool(int.from_bytes(p, "big"))
@@ -957,7 +962,7 @@ class Prober:
             if n.owner and n.owner != address:
                 links.setdefault(n.owner, []).append("owner()")
             if n.admin and n.admin != address and n.admin != n.proxy_admin:
-                links.setdefault(n.admin, []).append("admin()")
+                links.setdefault(n.admin, []).append(n.admin_getter)
             for ctl, what in ((n.authorizer, "authorizer"), (n.dao, "dao()"), (n.emergency, "emergency()"), *((w, "ward") for w in n.wards)):
                 if ctl and ctl != address:
                     links.setdefault(ctl, []).append(what)
