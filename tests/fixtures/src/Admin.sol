@@ -377,3 +377,12 @@ contract ModuleWithSafe {
     address public safe;
     function set(address a) external { safe = a; }
 }
+
+/// Zodiac Delay modifier surface: its modules queue transactions that anyone executes after txCooldown.
+contract DelayModuleLike {
+    address[] internal mods;
+    uint256 public txCooldown = 7 days;
+    uint256 public queueNonce;
+    function addModule(address m) external { mods.push(m); }
+    function getModulesPaginated(address, uint256) external view returns (address[] memory, address) { return (mods, address(1)); }
+}

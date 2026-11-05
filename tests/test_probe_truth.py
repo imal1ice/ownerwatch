@@ -213,6 +213,20 @@ def test_half_is_not_fewer_than_half_and_modules_are_reported(anvil, artifacts):
     assert any(f"Safe module {key} (an EOA) can execute without the signers" == x for x in n.notes)
 
 
+def test_a_zodiac_delay_module_is_reported_with_its_cooldown_and_queuers(anvil, artifacts):  # noqa: F811
+    w3 = anvil
+    safe, delay = _deploy(w3, *artifacts["SafeWithModule"]), _deploy(w3, *artifacts["DelayModuleLike"])
+    recovery = w3.eth.accounts[4]
+    send(w3, safe.functions.addModule(delay.address))
+    send(w3, delay.functions.addModule(recovery))
+    p = Prober(w3)
+    n = p.probe(safe.address)
+    assert (f"Safe module {delay.address} is a Zodiac Delay modifier: transactions queued by {recovery} execute without the signers "
+            "after a 168h cooldown") in n.notes
+    assert not any(x.endswith("can execute without the signers") for x in n.notes)
+    assert p.seen[recovery].kind == "eoa"
+
+
 def test_replay_reports_every_powerful_role_and_every_contract_above_the_root(anvil, artifacts, capsys):  # noqa: F811
     w3 = anvil
     box = _deploy(w3, *artifacts["RoleLog"])

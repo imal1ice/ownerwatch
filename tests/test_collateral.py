@@ -153,6 +153,7 @@ def test_v2_adapters_nested_vault_and_unmapped_adapter(v1, morpho):
     send(w3, v2.functions.setTotalAssets(2_000_000 * USD + 8_001_000 * USD // 4))
     rep = build(w3, v2.address, w3.eth.block_number)
     assert rep.version_name == "Morpho Vault V2"
+    assert "| timelock(selector) | addAdapter 72h, increaseAbsoluteCap 0" in rep.markdown()
     assert {t.symbol: t.assets for t in rep.tokens} == {"PLN": 2_000_000 * USD, "OMT": 1_250_000 * USD, "RMT": 750_000 * USD}
     assert rep.reconciles and rep.complete
     nested = next(m for m in rep.markets.values() if m.collateral == v1["omt"].address)
@@ -310,3 +311,11 @@ def test_writing_the_report_reads_nothing(v1, monkeypatch):
     for name in ("call", "get_code", "get_storage_at"):
         monkeypatch.setattr(w3.eth, name, dead)
     assert (rep.markdown(), rep.text(), rep.config("http://x")) == before
+
+
+def test_simulated_calls_take_any_plain_arguments(v1):
+    rep = build(v1["w3"], v1["vault"].address, v1["w3"].eth.block_number)
+    omt = v1["omt"].address
+    # selectors nobody implements: every argument kind must encode, and a revert is no holder
+    assert rep._passes(omt, "mintWithData(address,uint256,bytes,bytes32,bool,string,int256)",
+                       ["address", "uint256", "bytes", "bytes32", "bool", "string", "int256"], [v1["w3"].eth.accounts[0]]) == []

@@ -73,8 +73,9 @@ contract VaultV2Like {
     string public symbol = "tv2USDT";
     uint8 public decimals = 18;
     address[] public adapters;
+    mapping(bytes4 => uint256) public timelock;
 
-    function init(address asset_) external { asset = asset_; }
+    function init(address asset_) external { asset = asset_; timelock[this.addAdapter.selector] = 3 days; }
     function adaptersLength() external view returns (uint256) { return adapters.length; }
     function addAdapter(address a) external { adapters.push(a); }
     function setTotalAssets(uint256 a) external { totalAssets = a; }

@@ -315,16 +315,16 @@ class CollateralReport:
         """Run fn. On a failed read, put the prober back as it was (a half-probed node would read as a contract with no
         owner), wait and retry; after the last try, record the failure. Returns (result, error)."""
         err = None
-        for attempt in range(3):
+        for attempt in range(5):
             saved = (copy.deepcopy(self.prober.seen), set(self.prober.replayed), list(self.prober.incomplete), dict(self._code))
             try:
                 return fn(), None
             except READ_ERRORS as e:
                 self.prober.seen, self.prober.replayed, self.prober.incomplete, self._code = saved
                 err = redact(e)
-                if attempt == 2 or any(g in err.lower() for g in GONE):
-                    break
                 limited = any(w in err.lower() for w in ("429", "too many", "rate"))
+                if attempt == (4 if limited else 2) or any(g in err.lower() for g in GONE):
+                    break
                 self.log(f"  {what}: {err}; retrying")
                 time.sleep((10 if limited else 2) * (attempt + 1))
         self.failed.append(f"{what}: {err}")
@@ -495,8 +495,13 @@ class CollateralReport:
         self.prober._role_findings(n)
 
     def _passes(self, target: str, sig: str, types: list[str], who: list[str]) -> list[str]:
-        fill = {"address": STRANGER, "bool": True, "string": "", "bytes": b""}
-        args = [fill.get(ty, bytes(int(ty[5:])) if ty.startswith("bytes") else 1) for ty in types]
+        def fill(ty: str):
+            if ty == "address":
+                return STRANGER
+            if ty.startswith("bytes"):
+                return bytes(int(ty[5:]) if ty[5:] else 0)
+            return {"bool": True, "string": ""}.get(ty, 1)
+        args = [fill(ty) for ty in types]
         data = _sel(sig) + (abi_encode(types, args) if types else b"")
         return [w for w in who if self.prober._try_call({"from": w, "to": target, "data": data}) is not None]
 
@@ -732,6 +737,11 @@ class CollateralReport:
         self.lost = self._uint(self.vault, "lostAssets()") if self.version_name == "MetaMorpho V1.1" else None
         self.vault_roles = {k: self.prober._addr(self.vault, f"{k}()") for k in ("owner", "curator", "guardian")}
         self.vault_timelock = self._uint(self.vault, "timelock()") if self.version_name.startswith("MetaMorpho") else None
+        self.v2_timelocks = {}
+        if self.version_name == "Morpho Vault V2":      # per-function timelocks on the curator's risk-raising calls
+            fns = ("addAdapter(address)", "increaseAbsoluteCap(bytes,uint256)", "increaseRelativeCap(bytes,uint256)", "setIsAllocator(address,bool)")
+            res = self.prober._batch_calls([(self.vault, _sel("timelock(bytes4)") + _sel(f) + bytes(28)) for f in fns])
+            self.v2_timelocks = {f.split("(")[0]: _u(r) for f, r in zip(fns, res) if r and len(r) >= 32}
         self.log(f"{self.vault} is a {self.version_name}; reading markets at block {self.block}")
         self.read_vault(self.vault)
 
@@ -873,6 +883,8 @@ class CollateralReport:
                 lines.append("| guardian() | none set |")
         if self.vault_timelock is not None:
             lines.append(f"| timelock() | {_dur(self.vault_timelock) if self.vault_timelock else '0'} |")
+        if self.v2_timelocks:
+            lines.append("| timelock(selector) | " + ", ".join(f"{f} {_dur(d) if d else '0'}" for f, d in self.v2_timelocks.items()) + " |")
         if self.lost:
             lines.append(f"| lostAssets() | {amount(self.lost, self.loan.decimals)} {loan}: assets the vault records as lost to bad debt |")
         lines.append(f"| Accounted for | {amount(self.accounted, self.loan.decimals)} {loan} in {len(self.markets)} markets and idle "

@@ -974,7 +974,16 @@ class Prober:
                 self.probe(n.authority)   # its role holders are resolved in check_roles
             for module in n.safe_modules:
                 c = self.probe(module)
-                n.notes.append(f"Safe module {module} ({'an EOA' if c.kind == 'eoa' else c.kind}) can execute without the signers")
+                cooldown = self._uint(module, "txCooldown()") if c.kind != "eoa" else None
+                if cooldown is not None and self._call(module, "queueNonce()") is not None:
+                    # Zodiac Delay modifier: its own modules queue, anyone executes after the cooldown. A recovery path, not a bypass.
+                    queuers = self._safe_modules(module)
+                    for q in queuers:
+                        self.probe(q)
+                    n.notes.append(f"Safe module {module} is a Zodiac Delay modifier: transactions queued by "
+                                   f"{', '.join(queuers) or 'its modules (none enabled)'} execute without the signers after a {_dur(cooldown)} cooldown")
+                else:
+                    n.notes.append(f"Safe module {module} ({'an EOA' if c.kind == 'eoa' else c.kind}) can execute without the signers")
             for ctl, roles in links.items():
                 c = self.probe(ctl)
                 what = " and ".join(roles)
