@@ -154,6 +154,7 @@ class Token:
     registry: str | None = None     # a separate AccessControl contract that holds the token's roles
     getters: dict[str, str] = field(default_factory=dict)      # minter(), pauser() ... -> address
     role_scope: dict[str, str] = field(default_factory=dict)   # role name -> how its holders were found
+    role_names: set[str] = field(default_factory=set)          # roles that belong to this token, on itself or its registry
     powers: dict[str, tuple[str, list[str]]] = field(default_factory=dict)   # owner/upgrade/mint/pause -> (cell, detail lines)
     findings: list[str] = field(default_factory=list)
     open: list[str] = field(default_factory=list)      # what this report could not establish about the token
@@ -462,13 +463,16 @@ class CollateralReport:
         where = t.registry or t.address
         if not self.prober._supports_access_control(where):
             return
-        names = {k: bytes(v) for k, v in ROLES.items()} | EXTRA_ROLES
-        declared = {"DEFAULT_ADMIN_ROLE"}        # roles known to exist: a missing holder is then an open question, not noise
-        for a in dict.fromkeys([t.address, where]):
-            found = {g: bytes.fromhex(h[2:]) for h, g in self.prober.role_names(a).items()}
-            names |= found
-            declared |= set(found)
+        # The token's own role getters name its roles. A registry shared by several tokens (Midas) holds the other
+        # tokens' roles too, so on a registry only the names the token declares count, plus DEFAULT_ADMIN_ROLE.
+        found = {g: bytes.fromhex(h[2:]) for h, g in self.prober.role_names(t.address).items()}
+        names = ({"DEFAULT_ADMIN_ROLE": bytes(32)} if t.registry else {k: bytes(v) for k, v in ROLES.items()} | EXTRA_ROLES) | found
+        declared = {"DEFAULT_ADMIN_ROLE"} | set(found)     # roles known to exist: a missing holder is then an open question, not noise
+        t.role_names = set(names)
         n = self.prober.seen[where]
+        for name, role in names.items():     # holders the explorer hints found under the bare hash get their name
+            if "0x" + role.hex() in n.roles:
+                n.roles[name] = list(dict.fromkeys(n.roles.get(name, []) + n.roles.pop("0x" + role.hex())))
         enumerable = self.prober._call_args(where, "getRoleMemberCount(bytes32)", bytes(32)) is not None
         for name, role in names.items():
             if not (MINT_ROLE.search(name) or PAUSE_ROLE.search(name) or name == "DEFAULT_ADMIN_ROLE"):
@@ -659,7 +663,7 @@ class CollateralReport:
         # mint and pause
         roles = dict(n.roles)
         if t.registry:
-            roles |= {f"{k} (on registry `{t.registry}`)": v for k, v in self.prober.seen[t.registry].roles.items()}
+            roles |= {f"{k} (on registry `{t.registry}`)": v for k, v in self.prober.seen[t.registry].roles.items() if k in t.role_names}
         for power, fns, pattern, getters in (("mint", MINT_FNS, MINT_ROLE, MINT_GETTERS), ("pause", PAUSE_FNS, PAUSE_ROLE, PAUSE_GETTERS)):
             fns = {**fns, **self._abi_fns(n, power)}
             skip = NOT_ADMIN_MINT if (t.erc4626 or t.pendle_yt) else set()

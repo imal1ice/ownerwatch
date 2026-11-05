@@ -319,3 +319,25 @@ def test_simulated_calls_take_any_plain_arguments(v1):
     # selectors nobody implements: every argument kind must encode, and a revert is no holder
     assert rep._passes(omt, "mintWithData(address,uint256,bytes,bytes32,bool,string,int256)",
                        ["address", "uint256", "bytes", "bytes32", "bool", "string", "int256"], [v1["w3"].eth.accounts[0]]) == []
+
+
+def test_a_shared_role_registry_only_counts_the_tokens_own_roles(v1, morpho, monkeypatch):
+    w3, blue, usdt, vault = v1["w3"], v1["blue"], v1["usdt"], v1["vault"]
+    a0, other = w3.eth.accounts[0], v1["minter"]
+    registry, token = _deploy(w3, *morpho["HiddenRoleToken"]), _deploy(w3, *morpho["RegistryToken"])
+    send(w3, token.functions.init(registry.address))
+    mint_role, other_role = bytes(Web3.keccak(text="TOKEN_MINT_ROLE")), bytes(Web3.keccak(text="OTHER_TOKEN_MINT_ROLE"))
+    send(w3, registry.functions.give(bytes(32), a0))
+    send(w3, registry.functions.give(mint_role, a0))
+    send(w3, registry.functions.give(other_role, other))       # another token's minter, on the same registry
+    send(w3, vault.functions.add(market(w3, blue, usdt.address, token.address, v1["oracle"].address), 1, False))
+    import ownerwatch.probe as mod
+    abi_names = {token.address: {"0x" + mint_role.hex(): "TOKEN_MINT_ROLE"}, registry.address: {"0x" + other_role.hex(): "OTHER_TOKEN_MINT_ROLE"}}
+    monkeypatch.setattr(mod.Prober, "role_names", lambda self, a: abi_names.get(Web3.to_checksum_address(a), {}))
+    rep = build(w3, vault.address, w3.eth.block_number)
+    t = next(x for x in rep.tokens if x.address == token.address)
+    assert t.registry == registry.address
+    mint = "\n".join(t.powers["mint"][1])
+    assert "TOKEN_MINT_ROLE (on registry" in mint and a0 in mint and "OTHER_TOKEN_MINT_ROLE" not in mint and other not in mint
+    assert any("mint(address,uint256) passes in simulation from" in x and a0 in x for x in t.powers["mint"][1])
+    assert any(x.startswith("DEFAULT_ADMIN_ROLE on registry") and a0 in x for x in t.powers["owner"][1])

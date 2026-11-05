@@ -199,3 +199,16 @@ contract OracleWithFeed {
     function init(address f) external { BASE_FEED_1 = f; }
     function price() external pure returns (uint256) { return 1e36; }
 }
+
+/// A token that keeps its roles in a separate AccessControl contract shared with other tokens (Midas-style).
+contract RegistryToken {
+    bytes32 public constant TOKEN_MINT_ROLE = keccak256("TOKEN_MINT_ROLE");
+    string public symbol = "RGT";
+    string public name = "Registry Token";
+    uint8 public decimals = 18;
+    address public accessControl;
+    function init(address r) external { accessControl = r; }
+    function mint(address, uint256) external view {
+        require(HiddenRoleToken(accessControl).hasRole(TOKEN_MINT_ROLE, msg.sender), "WMAC: hasnt role");
+    }
+}
