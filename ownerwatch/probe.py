@@ -170,6 +170,7 @@ def _embedded_addresses(code: bytes, limit: int = 8) -> list[str]:
 
 ROLES = {
     "DEFAULT_ADMIN_ROLE": b"\x00" * 32,
+    "ADMIN_ROLE": Web3.keccak(text="ADMIN_ROLE"),
     "PROPOSER_ROLE": Web3.keccak(text="PROPOSER_ROLE"),
     "EXECUTOR_ROLE": Web3.keccak(text="EXECUTOR_ROLE"),
     "CANCELLER_ROLE": Web3.keccak(text="CANCELLER_ROLE"),
@@ -339,7 +340,7 @@ class Prober:
                     continue
                 c = self.seen.get(who) or self.probe(who)   # a holder found by enumeration or a candidate
                 if c.kind == "eoa":
-                    note = f"{role} held by EOA {who}" + (": one key can queue any change on this timelock" if proposer else "")
+                    note = f"{role} held by EOA {who}" + (": this address alone can queue any change on this timelock" if proposer else "")
                 elif c.kind == "safe" and c.safe_threshold == 1:
                     note = f"{role} held by 1-of-N Safe {who}"
                 elif core and c.kind == "safe" and not self._timelocked(c):
@@ -354,7 +355,7 @@ class Prober:
         executors = n.roles.get("EXECUTOR_ROLE", [])
         if n.kind == "timelock" and not n.open_executor and len(executors) == 1:
             if (self.seen.get(executors[0]) or self.probe(executors[0])).kind == "eoa":
-                note = f"the only EXECUTOR_ROLE holder is EOA {executors[0]}: nothing queued can run without that one key"
+                note = f"the only EXECUTOR_ROLE holder is EOA {executors[0]}: nothing queued can run without that address"
                 if note not in n.notes:
                     n.notes.append(note)
 
@@ -875,7 +876,7 @@ class Prober:
                              for i in range(count)]
             n.safe_modules = self._safe_modules(address)
             if thr == 1:
-                n.notes.append("1-of-N Safe: a single key can act")
+                n.notes.append("1-of-N Safe: a single owner can act")
             elif thr * 2 < count:
                 n.notes.append(f"{thr}-of-{count} Safe: fewer than half the owners are needed")
             elif thr * 2 == count:
@@ -972,8 +973,8 @@ class Prober:
                 what = " and ".join(roles)
                 if c.kind == "eoa":
                     n.notes.append(f"{what} is an EOA {ctl}" + (f" (EIP-7702 delegated to {c.delegate})" if c.delegate else "")
-                                   + (": one private key, no multisig" if n.kind in ("timelock", "legacy-timelock")
-                                      else ": one private key, no timelock, no multisig"))
+                                   + (": no multisig on-chain" if n.kind in ("timelock", "legacy-timelock")
+                                      else ": no timelock or multisig on-chain"))
                 elif c.kind == "safe" and c.safe_threshold == 1:
                     n.notes.append(f"{what} is a 1-of-N Safe {ctl}")
                 elif c.kind in ("safe", "contract", "proxy") and n.kind in ("proxy", "contract") and not self._timelocked(c):
@@ -1145,6 +1146,8 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
     if risks:
         for a, note in risks:
             lines.append(f"- `{short(a)}`: {note}")
+        if any("EOA" in note for _, note in risks):
+            lines.append("- The chain shows an address, not how its key is held: an EOA above may be one key or an MPC wallet.")
     else:
         lines.append("- No single-key or zero-delay control paths found among the probed addresses.")
     if any(n.kind == "access-manager" and n.address not in prober.replayed for n in prober.seen.values()):

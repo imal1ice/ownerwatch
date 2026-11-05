@@ -269,6 +269,24 @@ def test_multisig_role_admin_outside_the_timelock_is_a_finding(anvil, artifacts)
     assert "No single-key or zero-delay" not in markdown_report(p, "T", "anvil", [n])
 
 
+def test_admin_role_found_by_name_and_eoa_findings_do_not_claim_one_key(anvil, artifacts):  # noqa: F811
+    """A plain ADMIN_ROLE is tested by name, so a reads-only probe finds it. The chain shows an address, not how its
+    key is held, so an EOA finding says what the chain shows and leaves room for an MPC wallet."""
+    from web3 import Web3
+    w3 = anvil
+    acct, holder = w3.eth.accounts[0], w3.eth.accounts[1]
+    box = _deploy(w3, *artifacts["RoleLog"])
+    w3.eth.wait_for_transaction_receipt(box.functions.grantRole(Web3.keccak(text="ADMIN_ROLE"), holder).transact({"from": acct}))
+    p = Prober(w3)
+    n = p.probe(box.address)
+    p.check_roles([holder])
+    assert n.roles.get("ADMIN_ROLE") == [holder]
+    assert any(x.startswith(f"ADMIN_ROLE held by EOA {holder}") for x in n.notes), n.notes
+    report = markdown_report(p, "T", "anvil", [n])
+    assert "not how its key is held" in report
+    assert "one private key" not in report
+
+
 def test_role_candidates_find_holders_without_becoming_targets(anvil, artifacts, capsys):  # noqa: F811
     """--role-candidates tests extra addresses for roles; a holder found that way is classified (here a Safe) and
     the finding appears, but the candidate is not reported as a probed target unless it holds a role."""
