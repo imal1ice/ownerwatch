@@ -51,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--yaml", action="store_true", help="print only the suggested config")
     pr.add_argument("--markdown", action="store_true", help="print a short admin-surface report in markdown")
     pr.add_argument("--json", action="store_true", help="print the probed nodes as JSON")
+    pr.add_argument("--foundry", action="store_true",
+                    help="print a Foundry test (AdminSurface.t.sol) pinning what the probe read; on a fork, forge test fails when it drifts")
     pr.add_argument("--roles-from-logs", action="store_true",
                     help="replay RoleGranted/RoleRevoked logs to list every current role holder (needs an RPC with log history)")
     pr.add_argument("--from-block", type=int, default=None,
@@ -115,6 +117,18 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "probe":
         from .probe import Prober, chain_name_for, describe, make_w3, markdown_report, suggest_config
         rc = 0
+        block = None
+        if a.foundry and (a.yaml or a.markdown or a.json):
+            p.error("--foundry prints a test file; use it without --yaml, --markdown or --json")
+
+        def prober_for(rpc: str) -> Prober:
+            """A test pins one block, so with --foundry every read (and the role replay) stops at the block the probe starts at."""
+            nonlocal block
+            w3 = make_w3(rpc)
+            if a.foundry:
+                block = w3.eth.block_number
+                w3.eth.default_block = block
+            return Prober(w3)
 
         def replay(prober, addresses, logs_w3) -> int:
             """Replay role logs for the targets and every AccessControl contract or AccessManager found above them.
@@ -128,14 +142,17 @@ def main(argv: list[str] | None = None) -> int:
                     done.add(x)
                     try:
                         if prober.seen[x].kind == "access-manager" or prober._supports_access_control(x):
-                            prober.role_history(x, a.from_block, logs_w3, log=lambda m: print(m, file=sys.stderr))
+                            prober.role_history(x, a.from_block, logs_w3, log=lambda m: print(m, file=sys.stderr), to_block=block)
                     except Exception as e:  # noqa: BLE001
                         print(f"# role history for {x} failed: {redact(e)}", file=sys.stderr)
                         prober.incomplete.append(f"role history for {x} could not be read, so its holders may be incomplete")
                         status = 2
 
         def output(prober, chain_name, roots) -> None:
-            if a.markdown:
+            if a.foundry:
+                from .foundry import foundry_test
+                print(foundry_test(prober, chain_name, block, roots), end="")
+            elif a.markdown:
                 print(markdown_report(prober, a.label, chain_name, roots))
             elif a.json:
                 print(json.dumps({"chain": chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()],
@@ -146,10 +163,12 @@ def main(argv: list[str] | None = None) -> int:
             if a.config:
                 # one report per chain, addresses taken from the config
                 cfgs_ = load_all(a.config)
+                if a.foundry and len(cfgs_) > 1:
+                    p.error("--foundry writes one test for one chain: pass a single-chain config or --rpc with addresses")
                 for cfg in cfgs_:
                     # --rpc overrides a single-chain config; multi-chain configs use probe_rpc_url per chain
                     rpc = a.rpc if (a.rpc and len(cfgs_) == 1) else (cfg.probe_rpc_url or cfg.rpc_url)
-                    prober = Prober(make_w3(rpc))
+                    prober = prober_for(rpc)
                     name = cfg.chain_name
                     if a.chain_name and len(cfgs_) == 1:
                         name = a.chain_name
@@ -161,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                     if a.roles_from_logs:
                         logs_w3 = make_w3(a.logs_rpc or cfg.rpc_url, 60)
                         rc = max(rc, replay(prober, list(dict.fromkeys(addrs)), logs_w3))
-                    if a.markdown or a.json:
+                    if a.markdown or a.json or a.foundry:
                         output(prober, name, roots)
                     else:
                         print(f"# {name}")
@@ -170,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
                 return rc
             if not a.rpc or not a.addresses:
                 p.error("probe needs --rpc and at least one address, or --config")
-            prober = Prober(make_w3(a.rpc))
+            prober = prober_for(a.rpc)
             if a.chain_name is None:
                 a.chain_name = chain_name_for(prober.w3.eth.chain_id)
             roots = [prober.probe(x) for x in a.addresses]
@@ -178,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
             if a.roles_from_logs:
                 logs_w3 = make_w3(a.logs_rpc, 60) if a.logs_rpc else None
                 rc = replay(prober, [r.address for r in roots], logs_w3)
+            if a.foundry:
+                output(prober, a.chain_name, roots)     # it reads again, at the same block
+                return rc
         except (RuntimeError, ValueError, OSError, requests.RequestException, Web3Exception) as e:
             print(f"error: {redact(e)}\nhint: set probe_rpc_url in the config or pass --rpc with an RPC that serves eth_call", file=sys.stderr)
             return 2
