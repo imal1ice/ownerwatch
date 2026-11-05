@@ -859,6 +859,9 @@ class CollateralReport:
         elif n.implementation:
             lines.append(f"proxy with implementation `{n.implementation}` and no admin in the standard slots: upgrade path not resolved")
             cell += "; proxy, upgrade path not resolved"
+        if not info["feeds"]:
+            lines.append("no BASE_FEED/QUOTE_FEED/VAULT getters: where this oracle takes its price from was not read")
+            cell += "; price source not read"
         for k, (a, desc) in info["feeds"].items():
             fn = self.prober.seen.get(a)
             ctl = []

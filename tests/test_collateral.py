@@ -99,7 +99,8 @@ def test_v1_ranks_collateral_by_allocation_at_one_block(v1):
     assert "reconciles with totalAssets()" in md and "Coverage gaps" not in md
     assert "| 86% | 5,000,000.00 | 10,000,000.00 |" in md                 # the V1 cap, in loan-token units
     assert f"BASE_FEED_1 `{v1['feed'].address}` (OMT / USD): owner EOA `{a0}`" in md
-    assert "| none (feeds: EOA, no delay) |" in md and "| EOA, no delay |" in md   # oracle owner column, both kinds
+    assert "| none (feeds: EOA, no delay) |" in md and "| EOA, no delay; price source not read |" in md   # oracle owner column, both kinds
+    assert "where this oracle takes its price from was not read" in md
 
 
 def test_failed_read_is_reported_never_clean(v1, monkeypatch):
