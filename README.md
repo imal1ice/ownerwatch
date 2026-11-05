@@ -84,7 +84,12 @@ OWNERWATCH_RPC_URL="$RPC" forge test --match-contract AdminSurface
 
 The file records state; it does not judge it, and no RPC URL is written to it. What it cannot pin, such as a role granted to an address it has never seen on a contract that does not list its members, is spelled out in `// not pinned:` lines. Regenerate it after an intended change.
 
+**Or prove it.** `probe --prove` backs every finding with a simulation. It runs the privileged call as an `eth_call` from the holder and from a stranger (`0x…dEaD`), at one block, and reports `proven` only when the call succeeds from the holder and reverts from the stranger: the owner's `transferOwnership`/`setOwner`, the upgrade admin's `upgradeTo`/`upgradeToAndCall`, a `DEFAULT_ADMIN_ROLE` holder's `grantRole`, a mint or pause role, an OpenZeppelin timelock proposer's `schedule`. The function and its calldata come from the verified ABI with safe dummy arguments; nothing is ever sent. A call that reverts from both (gated by state, not the caller), succeeds from both, or whose arguments cannot be guessed is reported `not simulated: <why>`, never proven.
+
 ```bash
+ownerwatch probe --prove --rpc https://ethereum-rpc.publicnode.com 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+# proven: transferOwnership(address) succeeds from owner() 0xFcb1…AE3a, reverts from a stranger
+# proven: upgradeTo(address) succeeds from upgrade admin 0x807a…95d2, reverts from a stranger
 ```
 
 Other commands:

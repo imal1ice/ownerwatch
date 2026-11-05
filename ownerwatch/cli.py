@@ -53,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--json", action="store_true", help="print the probed nodes as JSON")
     pr.add_argument("--foundry", action="store_true",
                     help="print a Foundry test (AdminSurface.t.sol) pinning what the probe read; on a fork, forge test fails when it drifts")
+    pr.add_argument("--prove", action="store_true",
+                    help="prove each finding with an eth_call simulation at the pinned block: the privileged call succeeds "
+                         "from the holder and reverts from a stranger (eth_call only, nothing is sent)")
     pr.add_argument("--roles-from-logs", action="store_true",
                     help="replay RoleGranted/RoleRevoked logs to list every current role holder (needs an RPC with log history)")
     pr.add_argument("--from-block", type=int, default=None,
@@ -154,6 +157,8 @@ def main(argv: list[str] | None = None) -> int:
         block = None
         if a.foundry and (a.yaml or a.markdown or a.json):
             p.error("--foundry prints a test file; use it without --yaml, --markdown or --json")
+        if a.foundry and a.prove:
+            p.error("--foundry pins the state it read; --prove adds live simulations: use --prove without --foundry")
 
         def prober_for(rpc: str) -> Prober:
             """A test pins one block, so with --foundry every read (and the role replay) stops at the block the probe starts at."""
@@ -187,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                 from .foundry import foundry_test
                 print(foundry_test(prober, chain_name, block, roots), end="")
             elif a.markdown:
-                print(markdown_report(prober, a.label, chain_name, roots))
+                print(markdown_report(prober, a.label, chain_name, roots, prove=a.prove))
             elif a.json:
                 print(json.dumps({"chain": chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()],
                                   "incomplete": prober.incomplete}, indent=2))
@@ -214,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
                     if a.roles_from_logs:
                         logs_w3 = make_w3(a.logs_rpc or cfg.rpc_url, 60)
                         rc = max(rc, replay(prober, list(dict.fromkeys(addrs)), logs_w3))
+                    if a.prove:
+                        prober.prove()
                     if a.markdown or a.json or a.foundry:
                         output(prober, name, roots)
                     else:
@@ -234,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
             if a.foundry:
                 output(prober, a.chain_name, roots)     # it reads again, at the same block
                 return rc
+            if a.prove:
+                prober.prove()
         except (RuntimeError, ValueError, OSError, requests.RequestException, Web3Exception) as e:
             print(f"error: {redact(e)}\nhint: set probe_rpc_url in the config or pass --rpc with an RPC that serves eth_call", file=sys.stderr)
             return 2

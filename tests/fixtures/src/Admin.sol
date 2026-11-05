@@ -420,3 +420,70 @@ contract DelayModuleLike {
     function addModule(address m) external { mods.push(m); }
     function getModulesPaginated(address, uint256) external view returns (address[] memory, address) { return (mods, address(1)); }
 }
+
+/// Real OpenZeppelin-style AccessControl: grantRole checks the role's admin, so the DEFAULT_ADMIN_ROLE holder can grant
+/// and a stranger cannot. `probe --prove` simulates grantRole(DEFAULT_ADMIN_ROLE, dummy): it succeeds from the holder
+/// and reverts from a stranger, so the finding is proven.
+contract AccessControlLike {
+    bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
+    mapping(bytes32 => mapping(address => bool)) internal _has;
+    mapping(bytes32 => bytes32) internal _admin;        // role -> admin role, default DEFAULT_ADMIN_ROLE
+    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
+    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
+    constructor() { _has[DEFAULT_ADMIN_ROLE][msg.sender] = true; }
+    function hasRole(bytes32 role, address a) public view returns (bool) { return _has[role][a]; }
+    function getRoleAdmin(bytes32 role) public view returns (bytes32) { return _admin[role]; }
+    function grantRole(bytes32 role, address a) external {
+        require(_has[getRoleAdmin(role)][msg.sender], "AccessControl: missing role");
+        _has[role][a] = true;
+        emit RoleGranted(role, a, msg.sender);
+    }
+}
+
+/// onlyOwner transferOwnership that proves: it succeeds from the owner and reverts from anyone else.
+contract RealOwnable {
+    address public owner = msg.sender;
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    function transferOwnership(address n) external {
+        require(msg.sender == owner, "Ownable: caller is not the owner");
+        require(n != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipTransferred(owner, n);
+        owner = n;
+    }
+}
+
+/// An owner whose transferOwnership is also gated by a flag that defaults to false, so the call reverts for the owner
+/// and for a stranger alike. `probe --prove` must report this "not simulated" (gated by state, not the caller), never
+/// proven: a revert from both says nothing about who holds the key.
+contract LockedOwnable {
+    address public owner = msg.sender;
+    bool public unlocked;        // false until set: the gate is shut
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    function setUnlocked(bool v) external { require(msg.sender == owner, "owner"); unlocked = v; }
+    function transferOwnership(address n) external {
+        require(unlocked, "locked");
+        require(msg.sender == owner, "Ownable: caller is not the owner");
+        emit OwnershipTransferred(owner, n);
+        owner = n;
+    }
+}
+
+/// OpenZeppelin TimelockController surface enough to prove a proposer: getMinDelay(), PROPOSER_ROLE and a schedule()
+/// gated on it and the delay. `probe --prove` schedules a dummy operation at the minimum delay: it succeeds from a
+/// proposer and reverts from a stranger. Nothing is committed (eth_call only).
+contract ScheduleTimelockLike {
+    bytes32 public constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
+    mapping(bytes32 => mapping(address => bool)) internal _roles;
+    mapping(bytes32 => uint256) public getTimestamp;
+    constructor() { _roles[bytes32(0)][msg.sender] = true; }
+    function getMinDelay() external pure returns (uint256) { return 172800; }
+    function give(bytes32 r, address a) external { _roles[r][a] = true; }
+    function hasRole(bytes32 r, address a) public view returns (bool) { return _roles[r][a]; }
+    function schedule(address target, uint256 value, bytes calldata data, bytes32 pred, bytes32 salt, uint256 delay) external {
+        require(hasRole(PROPOSER_ROLE, msg.sender), "proposer");
+        require(delay >= 172800, "delay");
+        bytes32 id = keccak256(abi.encode(target, value, data, pred, salt));
+        require(getTimestamp[id] == 0, "exists");
+        getTimestamp[id] = block.timestamp + delay;
+    }
+}

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import requests
 import yaml
 from eth_abi import decode as abi_decode
+from eth_abi import encode as abi_encode
 from web3 import Web3
 from web3.exceptions import ContractLogicError
 from web3.middleware import ExtraDataToPOAMiddleware
@@ -84,6 +85,22 @@ TIMELOCK_FN_NAME = re.compile(r"queue|schedule|propose", re.I)
 # How RPC nodes report a call that reverted or hit bad code. Everything else means the read itself failed.
 _REVERT_WORDS = ("revert", "vm execution", "evm error", "evmerror", "opcode", "out of gas", "not enough gas", "gas required exceeds",
                  "stack underflow", "stack overflow", "stack limit", "invalid jump", "bad jump", "bad instruction", "execution error", "precompile")
+
+# ---- proving findings by simulation (--prove) ----
+# A privileged call that succeeds from the holder and reverts from a stranger proves the holder controls it. Nothing is
+# sent: eth_call only, at one pinned block, with safe dummy arguments that are never committed. A call that reverts from
+# both the holder and the stranger is gated by state, not the caller, so it proves nothing and is never reported proven.
+STRANGER = Web3.to_checksum_address("0x000000000000000000000000000000000000dEaD")
+DUMMY_ADDR = Web3.to_checksum_address("0x0000000000000000000000000000000000000001")   # nonzero: a zero address trips sanity checks
+DUMMY_SALT = bytes(31) + b"\x01"
+OWNER_FNS = {"transferOwnership(address)": ["address"], "setOwner(address)": ["address"],
+             "setPeer(uint32,bytes32)": ["uint32", "bytes32"], "setDelegate(address)": ["address"]}   # onlyOwner functions, tried in order: first present is simulated
+# upgradeTo first: on zos/older transparent proxies it is a clean admin-only call, while upgradeToAndCall(impl, "") can
+# self-call and revert. UUPS proxies have only upgradeToAndCall, so they fall through to it (empty data makes no call).
+UPGRADE_FNS = {"upgradeTo(address)": ["address"], "upgradeToAndCall(address,bytes)": ["address", "bytes"]}
+SCHEDULE_FN = "schedule(address,uint256,bytes,bytes32,bytes32,uint256)"    # OpenZeppelin TimelockController
+MINT_FN_NAME = re.compile(r"^(mint|issue)", re.I)
+SIMPLE_ARG = re.compile(r"^(address|bool|string|bytes\d*|u?int\d*)$")
 
 
 class ProbeRpcError(RuntimeError):
@@ -185,6 +202,23 @@ ROLES = {
 
 
 @dataclass
+class Proof:
+    """A finding backed by a simulation: `fn` run as an eth_call at the pinned block. `proven` is True only when the
+    call succeeds from `holder` and reverts from a stranger; otherwise `why` says why control could not be simulated."""
+    fn: str                   # the privileged function simulated, e.g. transferOwnership(address)
+    role: str                 # what the holder is: owner(), DEFAULT_ADMIN_ROLE, upgrade admin, PROPOSER_ROLE
+    holder: str | None        # the address the call succeeds from (a finding's EOA or Safe)
+    proven: bool
+    why: str = ""             # when not proven, why the simulation does not prove control
+
+    def line(self, short=lambda a: a) -> str:
+        who = f"{self.role} {short(self.holder)}" if self.holder else self.role
+        if self.proven:
+            return f"proven: {self.fn} succeeds from {who}, reverts from a stranger"
+        return f"not simulated: {self.fn} ({who}): {self.why}" if self.holder else f"not simulated: {self.fn}: {self.why}"
+
+
+@dataclass
 class Node:
     address: str
     kind: str = "unknown"          # eoa | safe | timelock | legacy-timelock | proxy | contract
@@ -222,6 +256,7 @@ class Node:
     am_open: list[str] = field(default_factory=list)                          # AccessManager: sensitive functions open to anyone
     am_unmapped: list[str] = field(default_factory=list)                      # AccessManager: targets with no verified ABI
     notes: list[str] = field(default_factory=list)
+    proofs: list[Proof] = field(default_factory=list)   # --prove: each finding backed (or not) by a simulation
 
 
 class Prober:
@@ -230,6 +265,7 @@ class Prober:
         self.seen: dict[str, Node] = {}
         self.replayed: set[str] = set()      # addresses whose role logs were replayed
         self.incomplete: list[str] = []      # what this report could not cover; printed under Findings
+        self._code_cache: dict[str, bytes] = {}
         self._mc = None
         try:
             if len(self.w3.eth.get_code(MULTICALL3)) > 0:
@@ -819,6 +855,176 @@ class Prober:
             ctls = {a for a in n.roles.get("DEFAULT_ADMIN_ROLE", []) if a != n.address}
         return bool(ctls) and all(self._timelocked(self.seen.get(a) or self.probe(a), hops - 1) for a in ctls)
 
+    # ---- prove ----
+    def _code(self, addr: str | None) -> bytes:
+        if not addr:
+            return b""
+        if addr not in self._code_cache:
+            self._code_cache[addr] = bytes(self.w3.eth.get_code(addr))
+        return self._code_cache[addr]
+
+    def _present(self, n: Node, sig: str) -> bool:
+        """The function's selector is in the contract's own code, its implementation's or its clone target's."""
+        return _sel(sig) in self._code(n.address) + self._code(n.implementation) + self._code(n.clone_of)
+
+    def _leaf(self, addr: str | None) -> Node | None:
+        """A holder worth a proof: an EOA or a Safe already seen. A controller that is itself a contract is a path to
+        walk, not a leaf, so its own owner or role findings are proven on its node, not here."""
+        n = self.seen.get(addr) if addr else None
+        return n if n is not None and n.kind in ("eoa", "safe") else None
+
+    def _dummy(self, ty: str):
+        """A safe dummy for a simple ABI type, or None when it cannot be guessed (tuples, arrays, fixed point)."""
+        if ty == "address":
+            return DUMMY_ADDR
+        if ty == "bool":
+            return True
+        if ty == "string":
+            return ""
+        if ty == "bytes":
+            return b""
+        if re.fullmatch(r"bytes\d+", ty):
+            return bytes(int(ty[5:]))
+        if re.fullmatch(r"u?int\d*", ty):
+            return 1
+        return None
+
+    def _attempt(self, n: Node, fn: str, role: str, holder: str, types: list, values: list) -> None:
+        """Simulate fn(values) on n from holder and from a stranger, and record the finding. Proven only when the call
+        succeeds from the holder and reverts from the stranger; a revert from both is gated by state, not the caller."""
+        if any(v is None for v in values):
+            n.proofs.append(Proof(fn, role, holder, False, "an argument could not be filled with a safe dummy"))
+            return
+        try:
+            data = _sel(fn) + (abi_encode(types, values) if types else b"")
+        except Exception as e:  # noqa: BLE001
+            n.proofs.append(Proof(fn, role, holder, False, f"arguments could not be encoded ({e})"))
+            return
+        ok_holder = self._try_call({"from": holder, "to": n.address, "data": data}) is not None
+        ok_stranger = self._try_call({"from": STRANGER, "to": n.address, "data": data}) is not None
+        if ok_holder and not ok_stranger:
+            n.proofs.append(Proof(fn, role, holder, True))
+        elif ok_holder and ok_stranger:
+            n.proofs.append(Proof(fn, role, holder, False, "it succeeds from a stranger too, so the caller is not the gate"))
+        elif not ok_holder and not ok_stranger:
+            n.proofs.append(Proof(fn, role, holder, False, "it reverts from the holder too: gated by state, not the caller"))
+        else:
+            n.proofs.append(Proof(fn, role, holder, False, "it reverts from the holder but not from a stranger"))
+
+    def _mint_fn(self, n: Node) -> tuple[str, list] | None:
+        """A mint-like function with simple arguments, present in the code, from the verified ABI of the contract or
+        its implementation. web3's own ERC-4626 mint(uint256,address) is not an admin mint and is skipped."""
+        from .decode import verified_abi
+        abi: list = []
+        try:
+            chain_id = self.w3.eth.chain_id
+            for a in (n.address, n.implementation, n.clone_of):
+                if a:
+                    abi += verified_abi(chain_id, a) or []
+        except Exception:  # noqa: BLE001
+            pass
+        for f in abi:
+            types = [_abi_type(i) for i in f.get("inputs") or []]
+            sig = f"{f.get('name')}({','.join(types)})"
+            if (f.get("type") == "function" and f.get("stateMutability") not in ("view", "pure")
+                    and MINT_FN_NAME.search(f.get("name", "")) and sig != "mint(uint256,address)"
+                    and all(SIMPLE_ARG.match(t) for t in types) and self._present(n, sig)):
+                return sig, types
+        return None
+
+    def _prove_owner(self, n: Node) -> None:
+        holder = self._leaf(n.owner)
+        if holder is None:
+            return
+        for fn, types in OWNER_FNS.items():
+            if self._present(n, fn):
+                self._attempt(n, fn, "owner()", holder.address, types, [self._dummy(t) for t in types])
+                return
+        n.proofs.append(Proof("onlyOwner function", "owner()", n.owner, False,
+                              "no transferOwnership/setOwner/setPeer/setDelegate in the code to simulate"))
+
+    def _prove_upgrade(self, n: Node) -> None:
+        if not (n.implementation or n.beacon):
+            return
+        holder = self._leaf(n.proxy_admin) or (self._leaf(n.owner) if not n.proxy_admin else None)
+        if holder is None:    # the upgrade path runs through a contract; its own node carries the leaf proof
+            return
+        role = "upgrade admin" if holder.address == n.proxy_admin else "UUPS upgrade via owner()"
+        fn = next((f for f in UPGRADE_FNS if self._present(n, f)), None)
+        if fn is None:
+            n.proofs.append(Proof("upgradeToAndCall/upgradeTo", role, holder.address, False,
+                                  "no upgrade function found in the proxy or implementation code"))
+            return
+        impl = n.implementation or DUMMY_ADDR
+        values = [impl, b""] if fn == "upgradeToAndCall(address,bytes)" else [impl]
+        self._attempt(n, fn, role, holder.address, UPGRADE_FNS[fn], values)
+
+    def _prove_roles(self, n: Node) -> None:
+        done: set[tuple[str, str]] = set()
+        for role, holders in n.roles.items():
+            if role in ("PROPOSER_ROLE", "EXECUTOR_ROLE", "CANCELLER_ROLE"):
+                continue   # timelock-internal: PROPOSER_ROLE is proven by _prove_proposer, the others are not simulated here
+            for who in holders:
+                if who == ZERO or self._leaf(who) is None:
+                    continue
+                attempt = None
+                if re.search(r"PAUS", role) and self._present(n, "pause()"):
+                    attempt = ("pause()", [], [])
+                elif re.search(r"MINT|ISSU|BRIDGE", role) and (mf := self._mint_fn(n)):
+                    attempt = (mf[0], mf[1], [self._dummy(t) for t in mf[1]])
+                elif re.search(r"UPGRAD", role) and (uf := next((f for f in UPGRADE_FNS if self._present(n, f)), None)):
+                    impl = n.implementation or DUMMY_ADDR
+                    attempt = (uf, UPGRADE_FNS[uf], [impl, b""] if uf == "upgradeToAndCall(address,bytes)" else [impl])
+                elif role == "DEFAULT_ADMIN_ROLE" and self._present(n, "grantRole(bytes32,address)"):
+                    # DEFAULT_ADMIN_ROLE is its own admin, so the holder can grant it; a stranger cannot
+                    attempt = ("grantRole(bytes32,address)", ["bytes32", "address"], [ROLES["DEFAULT_ADMIN_ROLE"], DUMMY_ADDR])
+                if attempt is None:
+                    if (role, who) not in done:
+                        n.proofs.append(Proof(f"{role} power", role, who, False,
+                                              "no function for this role found in the code (grantRole proves only DEFAULT_ADMIN_ROLE)"))
+                        done.add((role, who))
+                    continue
+                if (attempt[0], who) in done:
+                    continue
+                done.add((attempt[0], who))
+                self._attempt(n, attempt[0], role, who, attempt[1], attempt[2])
+
+    def _prove_proposer(self, n: Node) -> None:
+        proposers = [h for h in n.roles.get("PROPOSER_ROLE", []) if self._leaf(h)]
+        if not proposers:
+            return
+        if not self._present(n, SCHEDULE_FN):
+            for h in proposers:
+                n.proofs.append(Proof(SCHEDULE_FN, "PROPOSER_ROLE", h, False,
+                                      "this timelock has no OpenZeppelin schedule(...); a legacy queueTransaction needs a future eta"))
+            return
+        delay = self._uint(n.address, "getMinDelay()")
+        if delay is None:
+            for h in proposers:
+                n.proofs.append(Proof(SCHEDULE_FN, "PROPOSER_ROLE", h, False, "getMinDelay() did not answer, so the schedule delay is unknown"))
+            return
+        types = ["address", "uint256", "bytes", "bytes32", "bytes32", "uint256"]
+        values = [DUMMY_ADDR, 0, b"", bytes(32), DUMMY_SALT, delay]
+        for h in proposers:
+            self._attempt(n, SCHEDULE_FN, "PROPOSER_ROLE", h, types, values)
+
+    def prove(self) -> None:
+        """Back every finding with a simulation. For each owner, upgrade admin, role holder or timelock proposer that is
+        an EOA or a Safe, run its privileged call as an eth_call from the holder (expect success) and from a stranger
+        (expect revert). eth_call only; nothing is sent. Every simulation reads one block, pinned here so the holder's
+        call and the stranger's see the same state. A finding is proven only when the call succeeds from the holder and
+        reverts from the stranger; anything else is reported, never claimed proven."""
+        if self.w3.eth.default_block in (None, "latest"):
+            self.w3.eth.default_block = self.w3.eth.block_number      # one block for every simulation, as the rest of the probe read
+        for n in [x for x in self.seen.values() if x.kind != "eoa"]:
+            n.proofs = []
+            if n.owner and n.owner != n.address:
+                self._prove_owner(n)
+            self._prove_upgrade(n)
+            self._prove_roles(n)
+            if n.kind == "timelock":
+                self._prove_proposer(n)
+
     # ---- probe ----
     def _has_timelock_functions(self, address: str, code: bytes, implementation: str | None) -> bool:
         """Whether a contract with a delay getter can actually queue things: known timelock selectors in its code
@@ -1066,6 +1272,8 @@ def describe(n: Node) -> str:
             s += f" [admin role {n.am_role_admin[r]}]"
     for note in n.notes:
         s += f"\n    ! {note}"
+    for p in n.proofs:
+        s += f"\n    {p.line()}"
     return s
 
 
@@ -1119,8 +1327,9 @@ def fact_lines(prober: Prober, chain_name: str) -> list[str]:
     return sorted(out)
 
 
-def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Node]) -> str:
-    """A short admin-surface report a protocol team can read in two minutes."""
+def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Node], prove: bool = False) -> str:
+    """A short admin-surface report a protocol team can read in two minutes. With prove=True (the probe's --prove) a
+    Proofs section shows each finding backed by a simulation, or why it could not be."""
     def short(a: str) -> str:
         return a[:6] + "…" + a[-4:]
 
@@ -1175,6 +1384,16 @@ def markdown_report(prober: Prober, label: str, chain_name: str, roots: list[Nod
         lines.append("- An AccessManager was found. It does not list its members, so only the tested addresses were checked for "
                      "roles: rerun with --roles-from-logs, or pass likely holders with --role-candidates.")
     lines += [f"- Not covered: {x}" for x in prober.incomplete]
+    if prove:
+        proofs = [(n.address, p) for n in prober.seen.values() for p in n.proofs]
+        lines += ["", "## Proofs", "",
+                  "Each privileged call run as an `eth_call` at the pinned block: it must succeed from the holder and "
+                  "revert from a stranger (`0x…dEaD`) to count as proof. Nothing was sent on-chain. A call that reverts "
+                  "from both is gated by state, not the caller, and proves nothing.", ""]
+        if proofs:
+            lines += [f"- `{short(a)}`: {p.line(short)}" for a, p in proofs]
+        else:
+            lines.append("- Nothing to simulate: no owner, upgrade admin, role holder or proposer that is an EOA or a Safe was found.")
     chain_summary = []
     for r in roots:
         path, cur, hops = [r], r, 0

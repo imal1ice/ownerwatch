@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `probe --prove` backs each finding with a simulation. It runs the privileged call as an `eth_call` at one block, once from the holder and once from a stranger (`0x…dEaD`), and reports `proven: <fn> succeeds from <holder>, reverts from a stranger` only when the holder's call succeeds and the stranger's reverts. Owners (`transferOwnership`/`setOwner`/`setPeer`), upgrade admins (`upgradeTo`/`upgradeToAndCall`), `DEFAULT_ADMIN_ROLE` holders (`grantRole`), mint and pause role holders, and OpenZeppelin timelock proposers (`schedule`) that are an EOA or a Safe are tested; the function and calldata come from the verified ABI with safe dummy arguments. A call that reverts from both (gated by state, not the caller), succeeds from both, or whose arguments cannot be guessed is reported `not simulated: <why>`, never proven. `eth_call` only; nothing is sent. The report gains a Proofs section (`markdown_report(..., prove=True)`); `--prove` cannot be combined with `--foundry`.
+
 ## 0.13.1 - 2026-11-05
 
 - `ownerwatch collateral <vault>`: a curator collateral report for MetaMorpho V1 and Morpho Vault V2. Finds the vault's markets from chain state, ranks its collateral by allocation, and shows who can mint, upgrade or pause each token (and what it wraps) with any timelock delay, each market's oracle and its owner, and a config that watches all of it. Every read is at one pinned block; a failed read is reported, never clean. `make_w3` keeps the chain id after the first request: web3 asked for it before every `eth_call`.
