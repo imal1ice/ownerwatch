@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.12.1 - 2026-11-05
+
+- `probe` tests a plain `ADMIN_ROLE` by name, so a probe without a log replay finds its holders.
+- EOA findings state what the chain shows ("no timelock or multisig on-chain") and no longer say "one private key": the chain shows an address, not how its key is held, and an EOA may be an MPC wallet. Reports with an EOA finding say so in one line.
+
 ## 0.12.0 - 2026-11-03
 
 - `custom_events` in the config: alert on a protocol's own admin events, by Solidity signature or, for an unverified contract, by topic0. A log that does not match its declared layout still alerts, raw.
