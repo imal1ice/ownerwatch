@@ -37,6 +37,8 @@ How control flows from the funds to the ultimate key(s): contract → admin → 
 
 One block per finding. A finding is an *unintended or under-protected* power, not a disclosed design choice — disclosed, timelocked, multi-sig powers are noted as context, not flagged.
 
+**A clean result is a valid outcome.** For a well-governed deployment the probe finds no single-key or zero-delay control path and reports nothing to simulate (e.g. every upgrade sits behind a timelock and a multisig). Say so plainly, and back it with the control graph in §3 — the honest "we checked and found no unintended power" is as much a deliverable as a list of findings, and more credible for it.
+
 ### F<n> — <title> · **<severity>**
 - **What:** <the power — e.g. "The STONE OFT owner can set any trusted remote.">
 - **Who holds it:** <address> (<EOA / Safe n-of-m / timelock>)
