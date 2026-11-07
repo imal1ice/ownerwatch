@@ -342,3 +342,27 @@ def test_a_shared_role_registry_only_counts_the_tokens_own_roles(v1, morpho, mon
     assert "TOKEN_MINT_ROLE (on registry" in mint and a0 in mint and "OTHER_TOKEN_MINT_ROLE" not in mint and other not in mint
     assert any("mint(address,uint256) passes in simulation from" in x and a0 in x for x in t.powers["mint"][1])
     assert any(x.startswith("DEFAULT_ADMIN_ROLE on registry") and a0 in x for x in t.powers["owner"][1])
+
+
+def test_to_dict_is_a_faithful_machine_readable_report(v1):
+    w3, vault = v1["w3"], v1["vault"]
+    block = w3.eth.block_number
+    rep = build(w3, vault.address, block)
+    d = rep.to_dict()
+    # round-trips through JSON with no loss (precision-safe: amounts are raw-integer strings)
+    assert json.loads(json.dumps(d)) == d
+    # vault + pin metadata matches the report
+    assert d["vault"]["address"] == vault.address and d["block"] == block
+    assert d["chain"] and d["chainId"] == w3.eth.chain_id
+    assert d["loanAsset"]["symbol"] == "USDT"
+    assert d["totalAssetsRaw"] == str(rep.total) == str(8_001_000 * USD)
+    assert d["reconciles"] is True and d["complete"] is True and d["coverageGaps"] == []
+    # collateral: same tokens, order, allocations and shares as the ranked markdown table
+    assert [c["symbol"] for c in d["collateral"]] == ["OMT", "RMT", "PLN"]
+    omt = d["collateral"][0]
+    # share is precise (markdown rounds 62.4922% to 62.5% for display; the data feed keeps full precision)
+    assert omt["allocatedRaw"] == str(5_000_000 * USD) and omt["sharePct"] == round(5_000_000 / 8_001_000 * 100, 4)
+    assert set(omt["powers"]) == {"owner", "upgrade", "mint", "pause"}
+    assert omt["powers"]["owner"]["summary"] == "EOA, no delay"
+    assert isinstance(omt["findings"], list) and isinstance(omt["notEstablished"], list) and omt["wraps"] is None
+    assert omt["markets"] and omt["markets"][0]["oracle"] == v1["oracle"].address

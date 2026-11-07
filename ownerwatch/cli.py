@@ -70,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--rpc", required=True)
     co.add_argument("--block", type=int, default=None, help="pin every read to this block (default: 5 blocks behind the head)")
     co.add_argument("--markdown", action="store_true", help="print the report in Markdown")
+    co.add_argument("--json", action="store_true", help="print the report as a machine-readable JSON object (for dashboards or a feed)")
     co.add_argument("--yaml", action="store_true",
                     help="print a config that watches every collateral token, its controllers and oracles (after the report with --markdown)")
     co.add_argument("--roles-from-logs", action="store_true",
@@ -130,7 +131,9 @@ def main(argv: list[str] | None = None) -> int:
             # the vault itself could not be read: there is no partial report worth printing
             print(f"error: could not read the vault: {redact(e)}", file=sys.stderr)
             return 2
-        if a.markdown:
+        if a.json:
+            print(json.dumps(rep.to_dict(), indent=2))
+        elif a.markdown:
             print(rep.markdown())
             if a.yaml:
                 print(f"## Watch config\n\n```yaml\n{rep.config(a.rpc)}```")
