@@ -1,0 +1,102 @@
+{
+  "standard": "ERC-8241",
+  "standardVersion": "core-draft",
+  "protocol": {
+    "name": "Compound III USDC (Ethereum)",
+    "chainId": 1,
+    "manifestHash": "0xca2de8392c6d0924fc62a5ad9a45edf72dc207fcca29c6c5f537909fd1b622fa"
+  },
+  "nonce": 1,
+  "observedAtBlock": 26362346,
+  "scope": {
+    "components": [
+      "component-c3d688b66703497daa19211eedff47f25384cdc3",
+      "component-316f9708bb98af7da9c68c1c3b5e79039cd336e3"
+    ],
+    "assets": [],
+    "exclusions": [],
+    "assumptions": []
+  },
+  "nodes": [
+    {
+      "nodeId": "contract-c3d688b66703497daa19211eedff47f25384cdc3",
+      "type": "CONTRACT",
+      "address": "0xc3d688B66703497DAA19211EEdff47f25384cdc3"
+    },
+    {
+      "nodeId": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779",
+      "type": "CONTRACT",
+      "address": "0x1EC63B5883C3481134FD50D5DAebc83Ecd2E8779"
+    },
+    {
+      "nodeId": "contract-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "type": "CONTRACT",
+      "address": "0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3"
+    },
+    {
+      "nodeId": "timelock-6d903f6003cca6255d85cca4d3b5e5146dc33925",
+      "type": "TIMELOCK",
+      "address": "0x6d903f6003cca6255D85CcA4D3B5E5146dC33925",
+      "delay": 604800
+    }
+  ],
+  "components": [
+    {
+      "componentId": "component-c3d688b66703497daa19211eedff47f25384cdc3",
+      "address": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
+      "nodeId": "contract-c3d688b66703497daa19211eedff47f25384cdc3",
+      "type": "contract",
+      "upgradeable": false,
+      "implementation": "0x63e749153BaF1838f63cA22c275370BD2B1cEB15",
+      "adminNodeId": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779"
+    },
+    {
+      "componentId": "component-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "address": "0x316f9708bB98af7dA9c68C1C3b5e79039cD336E3",
+      "nodeId": "contract-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "type": "contract",
+      "upgradeable": true,
+      "implementation": "0xcFC1fA6b7ca982176529899D99af6473aD80DF4F",
+      "adminNodeId": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779"
+    }
+  ],
+  "powers": [
+    {
+      "powerId": "upgrade-component-c3d688b66703497daa19211eedff47f25384cdc3",
+      "kind": "UPGRADE",
+      "enabled": true,
+      "target": "component-c3d688b66703497daa19211eedff47f25384cdc3",
+      "controllerNodeId": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779"
+    },
+    {
+      "powerId": "upgrade-component-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "kind": "UPGRADE",
+      "enabled": true,
+      "target": "component-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "controllerNodeId": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779"
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "upgrade_admin_of-contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779-contract-c3d688b66703497daa19211eedff47f25384cdc3",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779",
+      "to": "contract-c3d688b66703497daa19211eedff47f25384cdc3",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-timelock-6d903f6003cca6255d85cca4d3b5e5146dc33925-contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779",
+      "kind": "OWNER_OF",
+      "from": "timelock-6d903f6003cca6255d85cca4d3b5e5146dc33925",
+      "to": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779",
+      "direct": true
+    },
+    {
+      "edgeId": "upgrade_admin_of-contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779-contract-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "contract-1ec63b5883c3481134fd50d5daebc83ecd2e8779",
+      "to": "contract-316f9708bb98af7da9c68c1c3b5e79039cd336e3",
+      "direct": true
+    }
+  ]
+}
