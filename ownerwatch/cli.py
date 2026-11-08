@@ -4,6 +4,7 @@ import argparse
 import dataclasses
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,23 @@ from .alerts import Dispatcher, redact
 from .config import load_all
 from .events import CATALOG, NOTE_SPECS, VARIANTS
 from .watcher import Watcher, build_watchers
+
+NO_FOOTER_ENV = "OWNERWATCH_NO_FOOTER"
+# A short, price-free pointer appended to the --markdown probe report (not the terse or JSON output).
+# Set OWNERWATCH_NO_FOOTER=1 to suppress it.
+FOOTER = (
+    "\n\n---\n"
+    "ownerwatch is free and MIT-licensed. For a full written control-audit of a protocol \u2014 every admin path "
+    "proven from chain state at a pinned block \u2014 or continuous monitoring that alerts on any owner, role or "
+    "implementation change, see \"Work with me\": https://github.com/imal1ice/ownerwatch"
+)
+
+
+def _footer() -> str:
+    """The --markdown report footer, unless OWNERWATCH_NO_FOOTER is set truthy."""
+    if os.environ.get(NO_FOOTER_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
+        return ""
+    return FOOTER
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -195,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
                 from .foundry import foundry_test
                 print(foundry_test(prober, chain_name, block, roots), end="")
             elif a.markdown:
-                print(markdown_report(prober, a.label, chain_name, roots, prove=a.prove))
+                print(markdown_report(prober, a.label, chain_name, roots, prove=a.prove) + _footer())
             elif a.json:
                 print(json.dumps({"chain": chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()],
                                   "incomplete": prober.incomplete}, indent=2))
