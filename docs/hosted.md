@@ -23,4 +23,12 @@ The contract address will be published in the README once deployed. Until then, 
 ```bash
 ownerwatch hosted --rpc https://mainnet.base.org --subscriptions 0x... --configs configs/
 ```
-Drop `configs/<customer-wallet>.yaml` in that directory. The runner checks `isActive` and `chainCount` once a minute, starts or stops watchers accordingly, runs at most the paid number of chains, and reloads a file when it changes.
+Drop `configs/<customer-wallet>.yaml` in that directory.
+
+**Run it always-on with Docker** (one command on any host, read-only so no wallet):
+
+```bash
+SUBSCRIPTIONS=0x<your deployed Subscriptions address> docker compose -f docker-compose.hosted.yml up -d --build
+```
+
+The operator only reads the contract (`isActive`, `chainCount`), so it needs no key. `BASE_RPC` overrides the default Base RPC; put each paying customer's config at `configs/<customer-wallet>.yaml`. The runner checks `isActive` and `chainCount` once a minute, starts or stops watchers accordingly, runs at most the paid number of chains, and reloads a file when it changes.

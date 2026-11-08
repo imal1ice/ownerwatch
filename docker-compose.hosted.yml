@@ -1,0 +1,20 @@
+# Hosted-tier operator: watches the Subscriptions contract and runs a watcher for
+# every wallet with an active subscription (at most its paid chainCount), reloading
+# when a config changes. Read-only — it never signs, so no wallet/key is needed here.
+#
+#   SUBSCRIPTIONS=0x<your deployed Subscriptions address> docker compose -f docker-compose.hosted.yml up -d --build
+#
+# Env: SUBSCRIPTIONS (required, the contract address); BASE_RPC (default Base mainnet).
+# Put each paying customer's config at ./configs/<customer-wallet>.yaml (the webhook is in the config).
+services:
+  operator:
+    build: .
+    restart: unless-stopped
+    command: ["hosted", "--rpc", "${BASE_RPC:-https://mainnet.base.org}", "--subscriptions", "${SUBSCRIPTIONS:?set SUBSCRIPTIONS to the deployed contract address}", "--configs", "/app/configs"]
+    volumes:
+      - ./configs:/app/configs:ro
+      - ownerwatch-state:/app/state
+    environment:
+      - PYTHONUNBUFFERED=1
+volumes:
+  ownerwatch-state:
