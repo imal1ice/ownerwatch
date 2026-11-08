@@ -130,3 +130,9 @@ alerts:
 ```
 
 What each line catches: [proxy upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md), [role grants](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-role-grants.md), [Safe signers](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-signers.md), [timelock schedules](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md).
+
+## Work with me
+
+Migrating is free — ownerwatch is MIT-licensed and the mapping above is all you need. If you would rather have it done for you, I map your deployment's admin surface, write the monitoring config, and can run it for you, so any owner, role, Safe-signer or implementation change alerts your team.
+
+Write to imal1ice@proton.me. Before anything is paid, I share the terms, including where I am based, so you can decide whether you are able to work with me.
