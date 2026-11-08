@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo-128.png" alt="ownerwatch logo" width="104" height="104">
+</p>
+
 # ownerwatch
 
 [![ci](https://github.com/imal1ice/ownerwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/imal1ice/ownerwatch/actions/workflows/ci.yml) [![release](https://img.shields.io/github/v/release/imal1ice/ownerwatch)](https://github.com/imal1ice/ownerwatch/releases) ![license](https://img.shields.io/github/license/imal1ice/ownerwatch)

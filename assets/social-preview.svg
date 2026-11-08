@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121D30"/>
+      <stop offset="1" stop-color="#0A1120"/>
+    </linearGradient>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34E3C8"/>
+      <stop offset="1" stop-color="#1FB5A6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1280" height="6" fill="url(#acc)"/>
+  <!-- shield mark (no badge) -->
+  <g transform="translate(-1.2,9.8) scale(1.4)">
+    <path d="M108,126 Q108,113 121,113 L279,113 Q292,113 292,126 L292,208 Q292,272 200,328 Q108,272 108,208 Z"
+          fill="#34E3C8" fill-opacity="0.08" stroke="url(#acc)" stroke-width="15" stroke-linejoin="round"/>
+    <circle cx="200" cy="194" r="30" fill="#F4FBFA"/>
+    <path d="M188,208 L212,208 L221,260 L179,260 Z" fill="#F4FBFA"/>
+  </g>
+  <!-- wordmark -->
+  <text x="470" y="300" font-family="Noto Sans" font-size="104" font-weight="800" fill="#F4FBFA" letter-spacing="-2">ownerwatch</text>
+  <text x="474" y="366" font-family="Noto Sans" font-size="44" font-weight="600" fill="#34E3C8">Who controls this contract?</text>
+  <text x="474" y="418" font-family="Noto Sans" font-size="27" font-weight="400" fill="#8CA0B8">owners · admins · Safe signers · timelocks · roles</text>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" role="img" aria-label="ownerwatch">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121D30"/>
+      <stop offset="1" stop-color="#0C1422"/>
+    </linearGradient>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34E3C8"/>
+      <stop offset="1" stop-color="#1FB5A6"/>
+    </linearGradient>
+  </defs>
+  <!-- badge -->
+  <rect x="8" y="8" width="384" height="384" rx="92" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="383" height="383" rx="91.5" fill="none" stroke="#2A3B55" stroke-width="1.5"/>
+  <!-- shield: audit / security -->
+  <path d="M108,126 Q108,113 121,113 L279,113 Q292,113 292,126 L292,208 Q292,272 200,328 Q108,272 108,208 Z"
+        fill="#34E3C8" fill-opacity="0.08" stroke="url(#acc)" stroke-width="15" stroke-linejoin="round"/>
+  <!-- keyhole: who holds the owner/admin keys -->
+  <circle cx="200" cy="194" r="30" fill="#F4FBFA"/>
+  <path d="M188,208 L212,208 L221,260 L179,260 Z" fill="#F4FBFA"/>
+</svg>
