@@ -1,0 +1,3 @@
+# ownerwatch funding — crypto only, no account, no KYC. See docs/funding.md.
+# `custom` renders a Sponsor button and does NOT use GitHub Sponsors / Stripe.
+custom: ["https://github.com/imal1ice/ownerwatch/blob/main/docs/funding.md"]
