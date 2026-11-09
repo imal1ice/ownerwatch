@@ -21,18 +21,57 @@ from .watcher import Watcher, build_watchers
 NO_FOOTER_ENV = "OWNERWATCH_NO_FOOTER"
 # A short, price-free pointer appended to the --markdown probe report (not the terse or JSON output).
 # Set OWNERWATCH_NO_FOOTER=1 to suppress it.
-FOOTER = (
-    "\n\n---\n"
+FOOTER_BODY = (
     "ownerwatch is free and MIT-licensed. For a full written control-audit of a protocol \u2014 every admin path "
     "proven from chain state at a pinned block \u2014 or continuous monitoring that alerts on any owner, role or "
     "implementation change, see \"Work with me\": https://github.com/imal1ice/ownerwatch"
 )
+FOOTER = "\n\n---\n" + FOOTER_BODY
+
+# When the report found a critical control gap, the footer opens by naming the risk class the reader just saw,
+# instead of the generic pointer. Price-free and jurisdiction-first (same "Work with me" link); most severe first.
+_SEVERITY_LEADS = [
+    ("eoa", "This report found an admin or upgrade path held by a single externally-owned key: one key, with no "
+            "on-chain check, can change the contract."),
+    ("no-delay", "This report found a privileged path with no enforced timelock: an owner, upgrade or role change "
+                 "takes effect immediately, with no on-chain window to react."),
+    ("1-of-n", "This report found a 1-of-N Safe on an admin path: a single signer is enough to exercise it."),
+    ("module-bypass", "This report found a Safe module that can act without the signers, bypassing the multisig."),
+]
 
 
-def _footer() -> str:
-    """The --markdown report footer, unless OWNERWATCH_NO_FOOTER is set truthy."""
+def _top_risk_class(prober) -> str | None:
+    """The most severe critical control-risk class among the report's findings, or None.
+
+    Keyed on the exact note strings ownerwatch.probe emits (AccessManager notes are repeated per target, so
+    they are excluded, as in the report's Findings section)."""
+    if prober is None:
+        return None
+    notes = [note for n in prober.seen.values() for note in n.notes if not note.startswith("AccessManager 0x")]
+
+    def has(*subs: str) -> bool:
+        return any(any(s in note for s in subs) for note in notes)
+
+    if has("EOA"):  # an EOA owner, admin, proposer or sole executor on a control path
+        return "eoa"
+    # a privileged path with no enforced delay (a zero-delay timelock, or a core role / owner with no timelock)
+    if has("timelock delay is 0", "no timelock or multisig on-chain", "no multisig on-chain", "with no timelock"):
+        return "no-delay"
+    if has("1-of-N Safe"):
+        return "1-of-n"
+    if has("can execute without the signers"):
+        return "module-bypass"
+    return None
+
+
+def _footer(prober=None) -> str:
+    """The --markdown report footer, unless OWNERWATCH_NO_FOOTER is set truthy. With a prober, the footer names
+    the most severe control-risk class the report found (idea: hit the highest-intent moment, price-free)."""
     if os.environ.get(NO_FOOTER_ENV, "").strip().lower() in ("1", "true", "yes", "on"):
         return ""
+    cls = _top_risk_class(prober)
+    if cls is not None:
+        return "\n\n---\n" + dict(_SEVERITY_LEADS)[cls] + "\n\n" + FOOTER_BODY
     return FOOTER
 
 
@@ -219,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
                 from .foundry import foundry_test
                 print(foundry_test(prober, chain_name, block, roots), end="")
             elif a.markdown:
-                print(markdown_report(prober, a.label, chain_name, roots, prove=a.prove) + _footer())
+                print(markdown_report(prober, a.label, chain_name, roots, prove=a.prove) + _footer(prober))
             elif a.json:
                 print(json.dumps({"chain": chain_name, "nodes": [dataclasses.asdict(n) for n in prober.seen.values()],
                                   "incomplete": prober.incomplete}, indent=2))
