@@ -28,6 +28,29 @@ FOOTER_BODY = (
 )
 FOOTER = "\n\n---\n" + FOOTER_BODY
 
+# Written by `disclosure init` into .github/workflows/; keeps the disclosure honest in CI and emits a badge.
+DISCLOSURE_WORKFLOW = """# Keep your ERC-8241 control disclosure honest in CI and emit a live status badge.
+# Written by `ownerwatch disclosure init`. Review erc-8241.json, then commit both files.
+name: control-disclosure
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 */6 * * *"
+jobs:
+  disclosure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: imal1ice/ownerwatch-action@v1
+        with:
+          disclosure: erc-8241.json
+          rpc: ${{ secrets.RPC_URL }}   # any endpoint that serves eth_call
+          badge: badge.json
+          version: "0.15.0"             # badge needs ownerwatch >= 0.15.0
+          fail-on-drift: false          # keep CI green; the badge still reddens on drift
+"""
+
 # When the report found a critical control gap, the footer opens by naming the risk class the reader just saw,
 # instead of the generic pointer. Price-free and jurisdiction-first (same "Work with me" link); most severe first.
 _SEVERITY_LEADS = [
@@ -154,6 +177,16 @@ def main(argv: list[str] | None = None) -> int:
     dc.add_argument("--block", type=int, default=None, help="pin every read to this block (default: latest)")
     dc.add_argument("--json", action="store_true", help="print the full report as JSON")
     dc.add_argument("--badge", metavar="PATH", help="also write a shields.io endpoint-badge JSON (control disclosure: verified / N issues) to PATH")
+    di = dsub.add_parser("init", help="scaffold the whole flow in one step: draft the disclosure, write a CI workflow that checks it and emits a status badge, and print the README snippet")
+    di.add_argument("addresses", nargs="+")
+    di.add_argument("--rpc", required=True)
+    di.add_argument("--name", default="Protocol")
+    di.add_argument("--dir", default=".", help="directory to write erc-8241.json and .github/workflows/control-disclosure.yml into (default: .)")
+    di.add_argument("--no-roles-from-logs", dest="roles_from_logs", action="store_false",
+                    help="only test common roles on named addresses instead of replaying every role grant")
+    di.add_argument("--logs-rpc", default=None, help="RPC for eth_getLogs (default: a public full-history gateway, else --rpc)")
+    di.add_argument("--from-block", type=int, default=None, help="first block of the role replay (default: creation block)")
+    di.add_argument("--block", type=int, default=None, help="read at this block (default: latest)")
     a = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
@@ -167,6 +200,26 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if a.dcmd == "draft":
                 print(json.dumps(draft(w3, a.addresses, a.name, a.block, **opts), indent=2))
+                return 0
+            if a.dcmd == "init":
+                base = Path(a.dir)
+                discl = draft(w3, a.addresses, a.name, a.block, **opts)   # chain read first; files written only on success
+                disc_path = base / "erc-8241.json"
+                disc_path.write_text(json.dumps(discl, indent=2))
+                wf_path = base / ".github" / "workflows" / "control-disclosure.yml"
+                wf_path.parent.mkdir(parents=True, exist_ok=True)
+                wf_path.write_text(DISCLOSURE_WORKFLOW)
+                print(
+                    f"Wrote {disc_path} and {wf_path}.\n\n"
+                    "Next:\n"
+                    f"  1. Review {disc_path.name} — it is drafted from chain state as a starting point, not the truth; correct any label and drop anything out of scope.\n"
+                    "  2. Set an RPC_URL secret on the repo (any endpoint that serves eth_call).\n"
+                    "  3. Commit both files. CI then checks the disclosure against the chain and writes badge.json on every run.\n"
+                    "  4. Publish badge.json (commit it, a Pages branch, or an artifact) and add to your README, replacing the URL:\n"
+                    "     [![control disclosure](https://img.shields.io/endpoint?url=https://YOURORG.github.io/YOURREPO/badge.json)](erc-8241.json)\n"
+                    "  See docs/disclosure-quickstart.md.",
+                    file=sys.stderr,
+                )
                 return 0
             report = Checker(w3, a.block, **opts).check(json.loads(Path(a.file).read_text()))
         except (RuntimeError, ValueError, OSError, requests.RequestException, Web3Exception) as e:

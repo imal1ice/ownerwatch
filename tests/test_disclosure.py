@@ -78,6 +78,22 @@ def test_cli_exit_code(deployed, tmp_path, capsys):
     assert "UNDISCLOSED" in capsys.readouterr().out
 
 
+def test_cli_init_scaffolds_disclosure_and_workflow(deployed, tmp_path):
+    import yaml
+    w3, addrs = deployed
+    rpc = w3.provider.endpoint_uri
+    assert main(["disclosure", "init", *addrs, "--rpc", rpc, "--name", "T", "--dir", str(tmp_path)]) == 0
+    disc = tmp_path / "erc-8241.json"
+    wf = tmp_path / ".github" / "workflows" / "control-disclosure.yml"
+    assert disc.exists() and wf.exists()
+    d = json.loads(disc.read_text())
+    assert d["standard"] == "ERC-8241"
+    assert Checker(w3).check(d)["summary"]["mismatch"] == 0            # the scaffolded disclosure checks clean
+    step = yaml.safe_load(wf.read_text())["jobs"]["disclosure"]["steps"][1]
+    assert step["uses"].startswith("imal1ice/ownerwatch-action@")
+    assert step["with"]["disclosure"] == "erc-8241.json" and step["with"]["badge"] == "badge.json"
+
+
 def test_drafted_edges_follow_the_owner_and_catch_a_stale_one(deployed):
     w3, addrs = deployed
     d = draft(w3, addrs, "Test")

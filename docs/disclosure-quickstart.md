@@ -4,6 +4,8 @@ An [ERC-8241](erc-8241.md) control disclosure is a small JSON file, committed to
 
 This is the fast path. For the field-by-field format see [erc-8241.md](erc-8241.md); for the badge alone see [disclosure-badge.md](disclosure-badge.md).
 
+> **One command:** `ownerwatch disclosure init <addresses> --rpc <rpc>` drafts the disclosure, writes the CI workflow below, and prints the badge snippet in one step. Review the drafted JSON, then follow steps 2 and 5. The rest of this page is what that command sets up.
+
 ## 1. Draft it from the chain (2 min)
 
 Install and draft a starting disclosure for your contracts:
