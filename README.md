@@ -171,7 +171,7 @@ python3 -m venv .venv && .venv/bin/pip install -e . pytest
 
 ## Work with me
 
-ownerwatch is free and self-hosted. If you would rather have someone do the work, I do admin-surface reviews (every owner, proxy admin, role holder and Safe signer in a deployment, replayed from logs, with findings, fixes and a ready-to-run config), monitoring setups, and ERC-8241 disclosures drafted from chain state and checked in CI. A review follows [docs/review-template.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/review-template.md): every finding pinned to a block and proven by simulation, so you can re-run and check it independently.
+ownerwatch is free and self-hosted. If you would rather have someone do the work, I do admin-surface reviews (every owner, proxy admin, role holder and Safe signer in a deployment, replayed from logs, with findings, fixes and a ready-to-run config), monitoring setups, and ERC-8241 disclosures drafted from chain state and checked in CI. A review follows [docs/review-template.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/review-template.md): every finding pinned to a block and proven by simulation, so you can re-run and check it independently. If you would rather not run the container at all, I can run the monitor for you as a hosted service — one watcher per chain, alerts to your own sink, paid on-chain in USDC with no account or invoice on either side; the mechanics are in [docs/hosted.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/hosted.md).
 
 Write to imal1ice@proton.me. Before anything is paid, I share the terms, including where I am based, so you can decide whether you are able to work with me.
 
