@@ -12,8 +12,14 @@ jobs:
         with:
           python-version: "3.12"
       - uses: foundry-rs/foundry-toolchain@v1
+        continue-on-error: true  # a GitHub-CDN 504 on the Foundry download must not red the Python suite; the forge tests auto-skip when forge is absent
       - run: pip install -e . pytest
       - run: pytest -q
       - run: ownerwatch events
       - run: for f in examples/*.yaml; do python -c "import ownerwatch.config as c; c.load_all('$f')"; done
-      - run: cd contracts && forge install foundry-rs/forge-std --no-git && forge test -vv
+      - run: |
+          if command -v forge >/dev/null 2>&1; then
+            cd contracts && forge install foundry-rs/forge-std --no-git && forge test -vv
+          else
+            echo "forge not available (toolchain install failed, e.g. GitHub-CDN outage); skipping contract tests"
+          fi
