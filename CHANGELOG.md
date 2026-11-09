@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.15.1 - 2026-11-09
+
+- `probe` names Injective's native EVM (chain id 1776) `injective`, so `probe --rpc <injective-rpc>` and suggested configs label the chain instead of `chain 1776`. Injective EVM is standard EVM; the probe already reads its proxies, Safes and roles.
+- Docs: a [10-minute control-disclosure quickstart](docs/disclosure-quickstart.md) that chains `disclosure draft` → review → `disclosure check` → the CI Action with a status badge → the shields.io embed, taking a protocol from zero to a published, chain-checked ERC-8241 disclosure.
+
 ## 0.15.0 - 2026-11-09
 
 - `ownerwatch collateral --json` prints the report as a stable, machine-readable JSON object (vault and pin metadata, loan asset, `totalAssets`, each collateral ranked by allocation with its `owner`/`upgrade`/`mint`/`pause` summary, findings, what it wraps, its markets and oracles, and the coverage gaps). Amounts are raw-integer strings so a JavaScript reader keeps full precision; shares are exact. For a risk dashboard or a feed, next to the existing `--markdown` and `--yaml`.
