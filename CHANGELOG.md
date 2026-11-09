@@ -2,7 +2,12 @@
 
 ## Unreleased
 
+## 0.15.0 - 2026-11-09
+
 - `ownerwatch collateral --json` prints the report as a stable, machine-readable JSON object (vault and pin metadata, loan asset, `totalAssets`, each collateral ranked by allocation with its `owner`/`upgrade`/`mint`/`pause` summary, findings, what it wraps, its markets and oracles, and the coverage gaps). Amounts are raw-integer strings so a JavaScript reader keeps full precision; shares are exact. For a risk dashboard or a feed, next to the existing `--markdown` and `--yaml`.
+- `disclosure check --badge <path>` writes a [shields.io](https://shields.io/badges/endpoint-badge) endpoint-badge JSON ("control disclosure: verified", or "N issues" in red) in the same run, so a protocol's CI turns an ERC-8241 disclosure into a live, self-hosted README badge that reddens on control drift — one command, no mapper script and no backend.
+- `probe --markdown` ends with a short, price-free pointer to the written control-audit and monitoring service. When the report found a critical control gap — an EOA on a control path, a zero-delay or absent timelock, a 1-of-N Safe, or a Safe module that can act without the signers — the pointer names that risk class. Suppress it with `OWNERWATCH_NO_FOOTER=1`; the terse and JSON output never carry it.
+- Documentation: a migration-from-Defender guide and four admin-monitoring how-tos (Safe signers, proxy upgrades, role grants, timelock queue); a pre-audit control checklist; a repeatable admin-surface review template with a worked example (Compound III USDC, honest negative); a self-serve control-disclosure status-badge guide; and a second chain-verified ERC-8241 disclosure example (Compound III USDC).
 
 ## 0.14.0 - 2026-11-05
 
