@@ -16,7 +16,13 @@ A disclosure is **verified** when `mismatch` and `undisclosed` are both `0`. Map
 
 ## One CI step
 
-Run this wherever you already run the checker (the same job that keeps your disclosure honest in CI). It writes `badge.json` next to your disclosure:
+Run this wherever you already run the checker (the same job that keeps your disclosure honest in CI). The `--badge` flag writes the shields.io JSON for you:
+
+```sh
+ownerwatch disclosure check disclosure.json --rpc "$RPC" --badge badge.json || true
+```
+
+That writes `badge.json` (`control disclosure: verified`, or `N issues` in red) regardless of the check's exit code, so the badge always reflects the latest run. On a release without `--badge` yet, map it yourself from `--json`:
 
 ```sh
 ownerwatch disclosure check disclosure.json --rpc "$RPC" --json > check.json || true
@@ -24,12 +30,9 @@ python - <<'PY'
 import json
 s = json.load(open("check.json"))["summary"]
 bad = s["mismatch"] + s["undisclosed"]
-json.dump({
-    "schemaVersion": 1,
-    "label": "control disclosure",
+json.dump({"schemaVersion": 1, "label": "control disclosure",
     "message": "verified" if bad == 0 else f"{bad} issue{'s' if bad != 1 else ''}",
-    "color": "brightgreen" if bad == 0 else "red",
-}, open("badge.json", "w"))
+    "color": "brightgreen" if bad == 0 else "red"}, open("badge.json", "w"))
 PY
 ```
 

@@ -114,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     dc.add_argument("--from-block", type=int, default=None, help="first block of the role replay (default: creation block)")
     dc.add_argument("--block", type=int, default=None, help="pin every read to this block (default: latest)")
     dc.add_argument("--json", action="store_true", help="print the full report as JSON")
+    dc.add_argument("--badge", metavar="PATH", help="also write a shields.io endpoint-badge JSON (control disclosure: verified / N issues) to PATH")
     a = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
@@ -133,6 +134,11 @@ def main(argv: list[str] | None = None) -> int:
             # a failed read proves nothing either way: exit 2 keeps it apart from exit 1, a real mismatch
             print(f"error: could not read chain state: {redact(e)}", file=sys.stderr)
             return 2
+        if getattr(a, "badge", None):
+            bad = report["summary"]["mismatch"] + report["summary"]["undisclosed"]
+            Path(a.badge).write_text(json.dumps({"schemaVersion": 1, "label": "control disclosure",
+                "message": "verified" if bad == 0 else f"{bad} issue" + ("" if bad == 1 else "s"),
+                "color": "brightgreen" if bad == 0 else "red"}))
         print(json.dumps(report, indent=2) if a.json else render(report))
         return 1 if report["summary"]["mismatch"] or report["summary"]["undisclosed"] else 0
 
