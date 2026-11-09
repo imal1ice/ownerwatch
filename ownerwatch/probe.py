@@ -1294,8 +1294,8 @@ def suggest_config(prober: Prober, rpc_url: str, chain_name: str, safe_chain: st
     return yaml.safe_dump(cfg, sort_keys=False)
 
 
-CHAIN_NAMES = {1: "ethereum", 10: "optimism", 56: "bsc", 100: "gnosis", 137: "polygon", 8453: "base",
-               42161: "arbitrum", 43114: "avalanche", 59144: "linea", 534352: "scroll"}
+CHAIN_NAMES = {1: "ethereum", 10: "optimism", 56: "bsc", 100: "gnosis", 137: "polygon", 1776: "injective",
+               8453: "base", 42161: "arbitrum", 43114: "avalanche", 59144: "linea", 534352: "scroll"}
 
 
 def chain_name_for(chain_id: int) -> str:
