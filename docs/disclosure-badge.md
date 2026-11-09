@@ -1,5 +1,7 @@
 # A "control disclosure" status badge (self-serve, no backend)
 
+> New to disclosures? The [10-minute quickstart](disclosure-quickstart.md) wires the badge in at the end of the whole flow (draft → check → CI → badge). This page is the badge itself in detail.
+
 If you publish an [ERC-8241](erc-8241.md) control disclosure, you can show a live **status badge** in your README that turns red the moment your on-chain control stops matching what you disclosed. It is rendered by [shields.io](https://shields.io/badges/endpoint-badge) from a small JSON file you host yourself — ownerwatch and shields do the work; there is no service to sign up for and nothing of yours leaves your infrastructure.
 
 ![control disclosure: verified](https://img.shields.io/badge/control%20disclosure-verified-brightgreen) ![control disclosure: 2 issues](https://img.shields.io/badge/control%20disclosure-2%20issues-red)

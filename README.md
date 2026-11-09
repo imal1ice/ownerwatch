@@ -43,7 +43,7 @@ Timelock and Safe-queue alerts show the call being made: full function and argum
 
 Run `ownerwatch events` to print the catalog. Your own admin events go under `custom_events` in the config, by Solidity signature or, for an unverified contract, by topic0; see [config.example.yaml](https://github.com/imal1ice/ownerwatch/blob/main/config.example.yaml).
 
-**ERC-8241 disclosures.** `ownerwatch disclosure draft` writes an [ERC-8241](https://ethereum-magicians.org/t/erc-8241-protocol-control-disclosure/28343) control disclosure from chain state, and `ownerwatch disclosure check` verifies one at a pinned block, including powers observed on-chain that the disclosure leaves out. See [docs/erc-8241.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/erc-8241.md).
+**ERC-8241 disclosures.** `ownerwatch disclosure draft` writes an [ERC-8241](https://ethereum-magicians.org/t/erc-8241-protocol-control-disclosure/28343) control disclosure from chain state, and `ownerwatch disclosure check` verifies one at a pinned block, including powers observed on-chain that the disclosure leaves out. New to this? The [10-minute quickstart](https://github.com/imal1ice/ownerwatch/blob/main/docs/disclosure-quickstart.md) takes you from zero to a published, CI-checked disclosure with a live badge. See also [docs/erc-8241.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/erc-8241.md).
 
 ## Quick start
 
@@ -110,6 +110,7 @@ See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/doc
 
 ## Guides
 
+- [Publish a verifiable control disclosure in ~10 minutes](https://github.com/imal1ice/ownerwatch/blob/main/docs/disclosure-quickstart.md): draft from chain → check → keep it honest in CI → a live status badge
 - [Moving admin-event monitors off OpenZeppelin Defender](https://github.com/imal1ice/ownerwatch/blob/main/docs/migrate-from-defender.md): what maps, what does not, and OpenZeppelin's own recommended path
 - [Alert on Safe signer and threshold changes](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-signers.md)
 - [Alert on proxy and beacon upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md)
