@@ -1,0 +1,79 @@
+{
+  "standard": "ERC-8241",
+  "standardVersion": "core-draft",
+  "protocol": {
+    "name": "Beanstalk",
+    "chainId": 1,
+    "manifestHash": "0xd4121efbb0eb55bfa9ba51f6d962b09688ac830e58f01a6332f52e78974f09e6"
+  },
+  "nonce": 1,
+  "observedAtBlock": 26384444,
+  "scope": {
+    "components": [
+      "component-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5"
+    ],
+    "assets": [],
+    "exclusions": [],
+    "assumptions": []
+  },
+  "nodes": [
+    {
+      "nodeId": "contract-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "type": "CONTRACT",
+      "address": "0xC1E088fC1323b20BCBee9bd1B9fC9546db5624C5"
+    },
+    {
+      "nodeId": "multisig-a9ba2c40b263843c04d344727b954a545c81d043",
+      "type": "MULTISIG",
+      "address": "0xa9bA2C40b263843C04d344727b954A545c81D043",
+      "threshold": 5,
+      "controllerCount": 9
+    }
+  ],
+  "components": [
+    {
+      "componentId": "component-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "address": "0xC1E088fC1323b20BCBee9bd1B9fC9546db5624C5",
+      "nodeId": "contract-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "type": "contract",
+      "upgradeable": true,
+      "adminNodeId": "multisig-a9ba2c40b263843c04d344727b954a545c81d043"
+    }
+  ],
+  "powers": [
+    {
+      "powerId": "upgrade-component-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "kind": "UPGRADE",
+      "enabled": true,
+      "target": "component-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "controllerNodeId": "multisig-a9ba2c40b263843c04d344727b954a545c81d043",
+      "threshold": 5,
+      "controllerCount": 9
+    },
+    {
+      "powerId": "ownership-component-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "kind": "OWNERSHIP",
+      "enabled": true,
+      "target": "component-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "controllerNodeId": "multisig-a9ba2c40b263843c04d344727b954a545c81d043",
+      "threshold": 5,
+      "controllerCount": 9
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "owner_of-multisig-a9ba2c40b263843c04d344727b954a545c81d043-contract-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "kind": "OWNER_OF",
+      "from": "multisig-a9ba2c40b263843c04d344727b954a545c81d043",
+      "to": "contract-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "direct": true
+    },
+    {
+      "edgeId": "upgrade_admin_of-multisig-a9ba2c40b263843c04d344727b954a545c81d043-contract-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "kind": "UPGRADE_ADMIN_OF",
+      "from": "multisig-a9ba2c40b263843c04d344727b954a545c81d043",
+      "to": "contract-c1e088fc1323b20bcbee9bd1b9fc9546db5624c5",
+      "direct": true
+    }
+  ]
+}
