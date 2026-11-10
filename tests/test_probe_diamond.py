@@ -11,6 +11,12 @@ from tests.test_watcher import _deploy, anvil, artifacts  # noqa: F401  (fixture
 pytestmark = pytest.mark.skipif(shutil.which("anvil") is None, reason="foundry not installed")
 
 
+@pytest.fixture(autouse=True)
+def unpinned(anvil):  # noqa: F811
+    """prove() pins the client's default block; the anvil fixture is shared across this module's tests."""
+    anvil.eth.default_block = "latest"
+
+
 def test_diamond_is_detected_as_upgradeable(anvil, artifacts):  # noqa: F811
     w3 = anvil
     diamond = _deploy(w3, *artifacts["DiamondLike"])
@@ -44,3 +50,21 @@ def test_diamond_disclosure_drafts_and_checks_clean(anvil, artifacts):  # noqa: 
     assert [r["status"] for r in upgrade] == ["ok"]
     assert report["summary"]["mismatch"] == 0
     assert report["undisclosed"] == []
+
+
+def test_diamondcut_gate_is_proven(anvil, artifacts):  # noqa: F811
+    """`probe --prove`: an empty diamondCut([],0x0,"") succeeds from owner() and reverts from a stranger,
+    proving the diamondCut gate rather than assuming the reference-implementation owner restriction."""
+    w3 = anvil
+    diamond = _deploy(w3, *artifacts["DiamondLike"])
+    owner = w3.eth.accounts[0]
+    p = Prober(w3)
+    p.probe(diamond.address)
+    p.probe(owner)
+    p.check_roles(list(p.seen.keys()))
+    p.prove()
+    proofs = p.seen[diamond.address].proofs
+    cut = [pr for pr in proofs if "diamondCut" in pr.fn]
+    assert len(cut) == 1
+    assert cut[0].proven is True and cut[0].holder == owner and cut[0].role == "diamondCut gate"
+    assert any(pr.line().startswith("proven: diamondCut") for pr in proofs)

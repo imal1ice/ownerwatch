@@ -30,6 +30,7 @@ LEGACY_ADMIN_SLOT = int.from_bytes(Web3.keccak(text="org.zeppelinos.proxy.admin"
 # A Diamond's code is replaceable via diamondCut, which the ERC-1967 implementation/admin slots never reveal.
 DIAMOND_LOUPE_ID = bytes.fromhex("48e2b093")        # ERC-165 interfaceId of IDiamondLoupe
 FACETS_SELECTOR = bytes.fromhex("7a0ed627")         # facets() selector, used to self-check a loupe via facetAddress()
+DIAMONDCUT_SELECTOR = bytes.fromhex("1f931c1c")     # diamondCut((address,uint8,bytes4[])[],address,bytes)
 ZERO = "0x" + "00" * 20
 MAX_NODES = 400     # a bound on how far the walk up the controllers goes, for pathological graphs only
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"   # same address on every major EVM chain
@@ -949,11 +950,27 @@ class Prober:
         n.proofs.append(Proof("onlyOwner function", "owner()", n.owner, False,
                               "no transferOwnership/setOwner/setPeer/setDelegate in the code to simulate"))
 
+    def _prove_diamond_cut(self, n: Node, holder: str) -> None:
+        """Prove the diamondCut gate: an empty diamondCut([], 0x0, "") eth_call succeeds from the gate (a no-op cut)
+        and reverts from a stranger -- turning the 'gate is owner() by the reference implementation' assumption into a
+        chain-proven fact, and catching a non-standard diamond whose gate is not the owner. The selector lives in a
+        facet reached by delegatecall, so presence is read from the loupe, not the diamond's own runtime code."""
+        fa = self._call_args(n.address, "facetAddress(bytes4)", DIAMONDCUT_SELECTOR + bytes(28))
+        if not (fa and _word_addr(fa) and _word_addr(fa) != ZERO):
+            n.proofs.append(Proof("diamondCut", "diamondCut gate", holder, False,
+                                  "no diamondCut facet on the loupe to simulate"))
+            return
+        self._attempt(n, "diamondCut((address,uint8,bytes4[])[],address,bytes)", "diamondCut gate", holder,
+                      ["(address,uint8,bytes4[])[]", "address", "bytes"], [[], ZERO, b""])
+
     def _prove_upgrade(self, n: Node) -> None:
-        if not (n.implementation or n.beacon):
+        if not (n.implementation or n.beacon or n.diamond):
             return
         holder = self._leaf(n.proxy_admin) or (self._leaf(n.owner) if not n.proxy_admin else None)
         if holder is None:    # the upgrade path runs through a contract; its own node carries the leaf proof
+            return
+        if n.diamond:
+            self._prove_diamond_cut(n, holder.address)
             return
         role = "upgrade admin" if holder.address == n.proxy_admin else "UUPS upgrade via owner()"
         fn = next((f for f in UPGRADE_FNS if self._present(n, f)), None)

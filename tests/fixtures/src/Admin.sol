@@ -500,7 +500,13 @@ contract DiamondLike {
         _facets.push(address(this));
         _facets.push(0x000000000000000000000000000000000000dEaD);
     }
+    struct FacetCut { address facetAddress; uint8 action; bytes4[] functionSelectors; }
     function facetAddresses() external view returns (address[] memory) { return _facets; }
     function facetAddress(bytes4) external view returns (address) { return address(this); }
     function supportsInterface(bytes4 id) external pure returns (bool) { return id == 0x48e2b093 || id == 0x01ffc9a7; }
+    // diamondCut is gated to owner() (the reference-implementation restriction): a no-op for an empty cut.
+    function diamondCut(FacetCut[] calldata, address, bytes calldata) external view {
+        require(msg.sender == owner, "LibDiamondCut: Must be contract owner");
+    }
+    function transferOwnership(address n) external { require(msg.sender == owner, "owner"); owner = n; }
 }
