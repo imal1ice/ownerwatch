@@ -1,0 +1,71 @@
+{
+  "standard": "ERC-8241",
+  "standardVersion": "core-draft",
+  "protocol": {
+    "name": "Uniswap V3",
+    "chainId": 1,
+    "manifestHash": "0x1272e3f14fee1131e4658279c8fe42e1a0aff4012d11c633f349083451568308"
+  },
+  "nonce": 1,
+  "observedAtBlock": 26383273,
+  "scope": {
+    "components": [
+      "component-1f98431c8ad98523631ae4a59f267346ea31f984"
+    ],
+    "assets": [],
+    "exclusions": [],
+    "assumptions": []
+  },
+  "nodes": [
+    {
+      "nodeId": "contract-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "type": "CONTRACT",
+      "address": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+    },
+    {
+      "nodeId": "contract-f2371551fe3937db7c750f4dfabe5c2fffdcbf5a",
+      "type": "CONTRACT",
+      "address": "0xf2371551Fe3937Db7c750f4DfABe5c2fFFdcBf5A"
+    },
+    {
+      "nodeId": "timelock-1a9c8182c09f50c8318d769245bea52c32be35bc",
+      "type": "TIMELOCK",
+      "address": "0x1a9C8182C09F50C8318d769245beA52c32BE35BC",
+      "delay": 172800
+    }
+  ],
+  "components": [
+    {
+      "componentId": "component-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "address": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "nodeId": "contract-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "type": "contract",
+      "upgradeable": false
+    }
+  ],
+  "powers": [
+    {
+      "powerId": "ownership-component-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "kind": "OWNERSHIP",
+      "enabled": true,
+      "target": "component-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "controllerNodeId": "contract-f2371551fe3937db7c750f4dfabe5c2fffdcbf5a"
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "owner_of-contract-f2371551fe3937db7c750f4dfabe5c2fffdcbf5a-contract-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "kind": "OWNER_OF",
+      "from": "contract-f2371551fe3937db7c750f4dfabe5c2fffdcbf5a",
+      "to": "contract-1f98431c8ad98523631ae4a59f267346ea31f984",
+      "direct": true
+    },
+    {
+      "edgeId": "owner_of-timelock-1a9c8182c09f50c8318d769245bea52c32be35bc-contract-f2371551fe3937db7c750f4dfabe5c2fffdcbf5a",
+      "kind": "OWNER_OF",
+      "from": "timelock-1a9c8182c09f50c8318d769245bea52c32be35bc",
+      "to": "contract-f2371551fe3937db7c750f4dfabe5c2fffdcbf5a",
+      "direct": true
+    }
+  ]
+}

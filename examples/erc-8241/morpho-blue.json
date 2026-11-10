@@ -1,0 +1,62 @@
+{
+  "standard": "ERC-8241",
+  "standardVersion": "core-draft",
+  "protocol": {
+    "name": "Morpho Blue",
+    "chainId": 1,
+    "manifestHash": "0xcca7d121ca7f2c9f113105f45e2e4f2986fa66b91e00bc83fb278826af69a3b0"
+  },
+  "nonce": 1,
+  "observedAtBlock": 26383274,
+  "scope": {
+    "components": [
+      "component-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb"
+    ],
+    "assets": [],
+    "exclusions": [],
+    "assumptions": []
+  },
+  "nodes": [
+    {
+      "nodeId": "contract-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "type": "CONTRACT",
+      "address": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+    },
+    {
+      "nodeId": "multisig-cba28b38103307ec8da98377fff9816c164f9afa",
+      "type": "MULTISIG",
+      "address": "0xcBa28b38103307Ec8dA98377ffF9816C164f9AFa",
+      "threshold": 6,
+      "controllerCount": 10
+    }
+  ],
+  "components": [
+    {
+      "componentId": "component-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "address": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+      "nodeId": "contract-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "type": "contract",
+      "upgradeable": false
+    }
+  ],
+  "powers": [
+    {
+      "powerId": "ownership-component-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "kind": "OWNERSHIP",
+      "enabled": true,
+      "target": "component-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "controllerNodeId": "multisig-cba28b38103307ec8da98377fff9816c164f9afa",
+      "threshold": 6,
+      "controllerCount": 10
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "owner_of-multisig-cba28b38103307ec8da98377fff9816c164f9afa-contract-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "kind": "OWNER_OF",
+      "from": "multisig-cba28b38103307ec8da98377fff9816c164f9afa",
+      "to": "contract-bbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb",
+      "direct": true
+    }
+  ]
+}
