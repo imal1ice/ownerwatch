@@ -168,7 +168,7 @@ class Checker:
                 self._add("component", cid, "mismatch", "an EIP-7702 account, not a contract" if obs.delegate else "no code at the address",
                           c["address"], None)
                 continue
-            upgradeable = bool(obs.implementation or obs.beacon)
+            upgradeable = bool(obs.implementation or obs.beacon or obs.diamond)
             problems = []
             if "upgradeable" in c and c["upgradeable"] != upgradeable:
                 problems.append(f"upgradeable declared {c['upgradeable']}, on-chain {upgradeable}")
@@ -176,11 +176,12 @@ class Checker:
                 problems.append(f"implementation declared {c['implementation']}, on-chain {obs.implementation}")
             if c.get("adminNodeId") and upgradeable and obs.proxy_admin and bound(c["adminNodeId"]) != obs.proxy_admin:
                 problems.append(f"admin declared {c['adminNodeId']} ({bound(c['adminNodeId'])}), on-chain upgrade admin {obs.proxy_admin}")
-            # a UUPS proxy keeps its upgrade authority in the implementation's code, which no slot names
+            # a UUPS proxy (or a Diamond's diamondCut) keeps its upgrade authority in code, which no slot names
             unnamed = upgradeable and not obs.proxy_admin
+            unnamed_msg = ("upgradeable (EIP-2535 Diamond), but its diamondCut gate is not readable from state" if obs.diamond
+                           else "upgradeable, but its upgrade authority is not readable from state (UUPS)")
             self._add("component", cid, "mismatch" if problems else ("unverifiable" if unnamed else "ok"),
-                      "; ".join(problems) or ("upgradeable, but its upgrade authority is not readable from state (UUPS)" if unnamed
-                                              else "address, upgradeability and admin match"),
+                      "; ".join(problems) or (unnamed_msg if unnamed else "address, upgradeability and admin match"),
                       {k: c.get(k) for k in ("upgradeable", "implementation", "adminNodeId")},
                       {"upgradeable": upgradeable, "implementation": obs.implementation, "upgradeAdmin": obs.proxy_admin})
 
@@ -208,9 +209,11 @@ class Checker:
                 self._add("power", pid, "unverifiable", f"controller {p.get('controllerNodeId')} has no address binding")
                 continue
             if kind == "UPGRADE":
-                upgradeable = bool(target.implementation or target.beacon)
+                upgradeable = bool(target.implementation or target.beacon or target.diamond)
                 if upgradeable and not target.proxy_admin:
-                    self._add("power", pid, "unverifiable", "upgrade authority is in the implementation's code (UUPS), which no slot names")
+                    self._add("power", pid, "unverifiable",
+                              "diamondCut gate is in the facet code (EIP-2535 Diamond), which no slot names" if target.diamond
+                              else "upgrade authority is in the implementation's code (UUPS), which no slot names")
                     continue
                 obs, key = target.proxy_admin, ("UPGRADE", target.address, None)
                 ok = ctl == obs if upgradeable else False
@@ -262,7 +265,7 @@ class Checker:
         for cid, c in comps.items():
             t = self._node(_a(c["address"]))
             seen = []
-            if t.implementation or t.beacon:
+            if t.implementation or t.beacon or t.diamond:
                 seen.append(("UPGRADE", None, t.proxy_admin))
             if t.owner:
                 seen.append(("OWNERSHIP", None, t.owner))
@@ -309,7 +312,7 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, r
 
     for r in roots:
         cid = f"component-{r.address[2:].lower()}"
-        up = bool(r.implementation or r.beacon)
+        up = bool(r.implementation or r.beacon or r.diamond)
         comp = {"componentId": cid, "address": r.address, "nodeId": nid(r.address), "type": "contract", "upgradeable": up}
         if r.implementation:
             comp["implementation"] = r.implementation
@@ -339,7 +342,7 @@ def draft(w3: Web3, addresses: list[str], name: str, block: int | None = None, r
         nxt = []
         for addr in frontier:
             n = p.seen.get(addr) or p.probe(addr)
-            for kind, ctl in (("OWNER_OF", n.owner), ("UPGRADE_ADMIN_OF", n.proxy_admin if (n.implementation or n.beacon) else None)):
+            for kind, ctl in (("OWNER_OF", n.owner), ("UPGRADE_ADMIN_OF", n.proxy_admin if (n.implementation or n.beacon or n.diamond) else None)):
                 if not ctl or ctl == addr:
                     continue
                 p.seen.get(ctl) or p.probe(ctl)

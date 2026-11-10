@@ -487,3 +487,20 @@ contract ScheduleTimelockLike {
         getTimestamp[id] = block.timestamp + delay;
     }
 }
+
+/// EIP-2535 Diamond loupe surface + ERC-173 owner(). facetAddresses() returns two facets and
+/// supportsInterface() confirms IDiamondLoupe (0x48e2b093). A Diamond's code is replaceable via
+/// diamondCut (gated to owner() in the reference implementation), an upgrade path no ERC-1967 slot
+/// reveals -- the probe must report it as upgradeable with owner() as the gate, not as immutable.
+contract DiamondLike {
+    address public owner;
+    address[] private _facets;
+    constructor() {
+        owner = msg.sender;
+        _facets.push(address(this));
+        _facets.push(0x000000000000000000000000000000000000dEaD);
+    }
+    function facetAddresses() external view returns (address[] memory) { return _facets; }
+    function facetAddress(bytes4) external view returns (address) { return address(this); }
+    function supportsInterface(bytes4 id) external pure returns (bool) { return id == 0x48e2b093 || id == 0x01ffc9a7; }
+}

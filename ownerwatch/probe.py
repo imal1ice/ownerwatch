@@ -26,6 +26,10 @@ BEACON_SLOT = int("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b351
 LEGACY_IMPL_SLOTS = (int.from_bytes(Web3.keccak(text="org.zeppelinos.proxy.implementation"), "big"),
                      int.from_bytes(Web3.keccak(text="PROXIABLE"), "big"))
 LEGACY_ADMIN_SLOT = int.from_bytes(Web3.keccak(text="org.zeppelinos.proxy.admin"), "big")
+# EIP-2535 Diamond loupe: facetAddresses()/facetAddress(bytes4), confirmed by the IDiamondLoupe ERC-165 id.
+# A Diamond's code is replaceable via diamondCut, which the ERC-1967 implementation/admin slots never reveal.
+DIAMOND_LOUPE_ID = bytes.fromhex("48e2b093")        # ERC-165 interfaceId of IDiamondLoupe
+FACETS_SELECTOR = bytes.fromhex("7a0ed627")         # facets() selector, used to self-check a loupe via facetAddress()
 ZERO = "0x" + "00" * 20
 MAX_NODES = 400     # a bound on how far the walk up the controllers goes, for pathological graphs only
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"   # same address on every major EVM chain
@@ -227,6 +231,8 @@ class Node:
     proxy_admin: str | None = None
     admin_factory: str | None = None    # set when the upgrade admin is stored in a proxy factory (adminOf)
     beacon: str | None = None
+    diamond: bool = False               # EIP-2535 Diamond: upgradeable by replacing facets via diamondCut (no ERC-1967 slot)
+    facet_count: int = 0                # number of facets on a Diamond
     owner: str | None = None
     pending_owner: str | None = None
     admin: str | None = None
@@ -1050,6 +1056,32 @@ class Prober:
             return []
         return [Web3.to_checksum_address(m) for m in modules]
 
+    def _diamond_facets(self, address: str) -> int | None:
+        """EIP-2535 Diamond detection. Returns the facet count if `address` is a Diamond, else None.
+
+        A Diamond keeps its code in facets reachable through a single proxy and is upgraded by
+        `diamondCut` replacing them -- an upgrade path the ERC-1967 implementation/admin/beacon slots
+        never reveal, so without this a Diamond reads as a plain, non-upgradeable owned contract.
+        Detection: the loupe `facetAddresses()` returns a non-empty address[], confirmed either by the
+        IDiamondLoupe ERC-165 id or by the loupe naming its own `facets()` selector (so a catch-all that
+        merely decodes as an array is not mistaken for a Diamond)."""
+        r = self._call(address, "facetAddresses()")
+        if not r or len(r) < 64:
+            return None
+        try:
+            (facets,) = abi_decode(["address[]"], r)
+        except Exception:  # noqa: BLE001
+            return None
+        if not facets:
+            return None
+        si = self._call_args(address, "supportsInterface(bytes4)", DIAMOND_LOUPE_ID + bytes(28))
+        if si is not None and len(si) == 32 and int.from_bytes(si, "big") == 1:
+            return len(facets)
+        fa = self._call_args(address, "facetAddress(bytes4)", FACETS_SELECTOR + bytes(28))
+        if fa and _word_addr(fa) and _word_addr(fa) != ZERO:
+            return len(facets)
+        return None
+
     def probe(self, address: str) -> Node:
         address = Web3.to_checksum_address(address)
         if address in self.seen:
@@ -1132,6 +1164,16 @@ class Prober:
                 n.authority = auth_
         n.owner = self._addr(address, "owner()")
         n.pending_owner = self._addr(address, "pendingOwner()")
+        if n.kind in ("proxy", "contract") and not n.implementation and not n.beacon:
+            fc = self._diamond_facets(address)
+            if fc is not None:
+                n.diamond = True
+                n.facet_count = fc
+                if n.owner and not n.proxy_admin:
+                    n.proxy_admin = n.owner   # diamondCut is gated to owner() in the EIP-2535 reference implementation
+                n.notes.append(f"EIP-2535 Diamond ({fc} facet{'s' if fc != 1 else ''}): code is upgradeable by replacing "
+                               "facets via diamondCut; the reference implementation restricts diamondCut to owner() -- "
+                               "confirm the gate for a non-standard diamond")
         if self._call(address, "appId()") is not None:
             n.kernel = self._addr(address, "kernel()")
         if n.kernel and n.kind in ("contract", "proxy"):

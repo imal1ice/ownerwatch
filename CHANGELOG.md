@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `probe` and `disclosure draft`/`check` recognize EIP-2535 Diamonds. A Diamond's code is replaceable through `diamondCut`, an upgrade path no ERC-1967 implementation/admin/beacon slot reveals, so a Diamond previously read as a plain, non-upgradeable owned contract — a false "immutable", the one thing the tool must never report. The probe detects a Diamond from its loupe (`facetAddresses()` confirmed by the IDiamondLoupe ERC-165 id or a self-consistent `facetAddress()`), marks it upgradeable, and names the diamondCut gate as `owner()` (the reference implementation's restriction; a note flags that a non-standard diamond should be confirmed). A disclosure then carries the Diamond's `UPGRADE` power and `check` verifies it; a diamond with no readable `owner()` is reported upgradeable-but-unverifiable, never immutable.
+
 ## 0.15.1 - 2026-11-09
 
 - `probe` names Injective's native EVM (chain id 1776) `injective`, so `probe --rpc <injective-rpc>` and suggested configs label the chain instead of `chain 1776`. Injective EVM is standard EVM; the probe already reads its proxies, Safes and roles.
