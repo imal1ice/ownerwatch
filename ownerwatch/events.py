@@ -66,6 +66,14 @@ CATALOG: list[EventSpec] = [
         "BeaconUpgraded", "BeaconUpgraded(address)",
         _abi("BeaconUpgraded", _inp("beacon", "address", True)),
         "critical", "proxy beacon changed to {beacon}", "ERC-1967"),
+    # EIP-2535 Diamond: a facet replacement is a code upgrade that no ERC-1967 slot reveals
+    EventSpec(
+        "DiamondCut", "DiamondCut((address,uint8,bytes4[])[],address,bytes)",
+        _abi("DiamondCut",
+             {"name": "_diamondCut", "type": "tuple[]", "indexed": False, "components": [
+                 _inp("facetAddress", "address", False), _inp("action", "uint8", False), _inp("functionSelectors", "bytes4[]", False)]},
+             _inp("_init", "address", False), _inp("_calldata", "bytes", False)),
+        "critical", "diamond facets changed via diamondCut: {nfacets} facet change(s), init {_init}", "EIP-2535"),
     # Pausable
     EventSpec(
         "Paused", "Paused(address)",

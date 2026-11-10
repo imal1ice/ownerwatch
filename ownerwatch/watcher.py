@@ -308,6 +308,8 @@ class Watcher:
             args["nactions"] = len(args.get("actions") or [])
         if spec.name == "ProposalSubmitted" and "calls" in args:
             args["ncalls"] = len(args.get("calls") or [])
+        if spec.name == "DiamondCut":
+            args["nfacets"] = len(args.get("_diamondCut") or [])
         if spec.name == "DualGovernanceStateChanged":
             name = lambda i: DG_STATES[i] if 0 <= i < len(DG_STATES) else str(i)
             args["fromState"], args["toState"] = name(args["from"]), name(args["to"])

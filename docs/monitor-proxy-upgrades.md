@@ -64,13 +64,5 @@ ownerwatch backfill --config proxy-upgrades.yaml --from-block 25904935 --to-bloc
 ## What this does not catch
 
 - **Upgrades that emit no event.** A custom proxy that writes its implementation slot without an event is invisible to any log-based monitor. The [ownerwatch Action](https://github.com/imal1ice/ownerwatch-action) re-probes on a schedule and fails when the implementation, upgrade admin, owner or signers differ from a committed report.
-- **Other upgrade events.** The catalog also has EIP-173 `ProxyImplementationUpdated`, Aave's `AddressSetAsProxy`, GovernorBravo's `NewImplementation` and Rocket Pool's `ContractUpgraded`. A diamond (EIP-2535) emits `DiamondCut`, which is not in the catalog; add it by topic0, because `event:` does not take tuple arguments:
-
-```yaml
-custom_events:
-  - topic0: "0x8faa70878671ccd212d20771b795c50af8fd3ff6cf27f4bde57e5d4de0aeb673"   # DiamondCut((address,uint8,bytes4[])[],address,bytes)
-    name: "DiamondCut"
-    severity: critical
-```
-
+- **Other upgrade events.** The catalog also has EIP-173 `ProxyImplementationUpdated`, Aave's `AddressSetAsProxy`, GovernorBravo's `NewImplementation`, Rocket Pool's `ContractUpgraded`, and an EIP-2535 diamond's `DiamondCut` — a facet replacement is a code upgrade no ERC-1967 slot reveals, so it is monitored out of the box (critical; the alert names how many facet changes the cut carried). No custom entry is needed.
 - **The warning before the upgrade.** If upgrades go through a timelock, the upgrade call is visible days earlier as a scheduled call. See [monitor-timelock-queue.md](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md).
