@@ -10,6 +10,8 @@ Self-hosted monitor that alerts you the moment the **admin surface** of your EVM
 
 Most protocol losses in 2025-2026 started with a key, a role or a proxy changing hands, not with a clever exploit. ownerwatch watches the events that mean "someone just gained control" and pushes them to Discord, Slack, Telegram or any webhook within seconds. No account, no SaaS, no third party holding your contract list. One YAML file and a Docker container.
 
+**See it reading real protocols:** the live [DeFi control-surface reference](https://imal1ice.github.io/admin-feed/transparency.html) shows, for major DeFi protocols, their governance timelock delays, upgradeability, and the last admin change observed — refreshed hourly from the same monitoring.
+
 ## What it watches
 
 Every address in your config gets the full catalog:
