@@ -22,6 +22,7 @@ Every address in your config gets the full catalog:
 | AccessControl | RoleGranted, RoleRevoked, RoleAdminChanged | high / critical |
 | OpenZeppelin AccessManager | RoleGranted, RoleRevoked, RoleAdminChanged, TargetFunctionRoleUpdated, TargetClosed, TargetAdminDelayUpdated, RoleGrantDelayChanged, OperationScheduled; AuthorityUpdated on managed contracts | high / critical |
 | ERC-1967 proxies | Upgraded, AdminChanged, BeaconUpgraded | critical |
+| EIP-2535 Diamond | DiamondCut (a facet added, removed or replaced — a code upgrade no ERC-1967 slot reveals) | critical |
 | Pausable | Paused, Unpaused | medium |
 | TimelockController | CallScheduled, CallExecuted, Cancelled, MinDelayChange | high / critical |
 | Legacy Timelock (Compound, Uniswap and forks) | NewAdmin, NewPendingAdmin, NewDelay, QueueTransaction, ExecuteTransaction, CancelTransaction | medium to critical |
@@ -67,7 +68,7 @@ A hardened systemd unit is in `deploy/ownerwatch.service`.
 
 Several chains in one process: put shared settings at the top level and a `chains:` list underneath, see `examples/multichain.yaml`.
 
-**Don't know what to watch?** Point `probe` at your main contract and it walks the owner/admin/proxy chain, tells you who can upgrade or pause it, flags EOAs and 1-of-N Safes, and prints a config:
+**Don't know what to watch?** Point `probe` at your main contract and it walks the owner/admin/proxy chain, tells you who can upgrade or pause it, flags EOAs, 1-of-N Safes and Safe transaction guards, sees an EIP-2535 Diamond as upgradeable through `diamondCut` (an upgrade path no proxy slot reveals, so most tools read a Diamond as immutable), and prints a config:
 
 ```bash
 ownerwatch probe --rpc https://eth.drpc.org --safe-chain eth --label Acme 0xYourProxy 0xYourSafe
@@ -79,7 +80,7 @@ ownerwatch probe --config config.yaml --markdown --label Acme > admin-surface.md
 
 Want that check in CI? Add one step: `uses: imal1ice/ownerwatch-action@v1` ([ownerwatch-action](https://github.com/imal1ice/ownerwatch-action)) re-probes weekly and fails when a signer, delay or proxy admin changes from the committed report. `examples/github-action-drift.yml` is the full workflow.
 
-**Or pin it in `forge test`.** `probe --foundry` prints `AdminSurface.t.sol`, a self-contained Foundry test (no forge-std) that pins what the probe read at one block: `owner()`, the ERC-1967 implementation, admin and beacon slots, each ProxyAdmin's owner, `hasRole` for every holder found, each Safe's threshold, signers and modules, each timelock's delay, and AccessManager roles and function guards. Run on a fork of the live chain, it fails and names what changed:
+**Or pin it in `forge test`.** `probe --foundry` prints `AdminSurface.t.sol`, a self-contained Foundry test (no forge-std) that pins what the probe read at one block: `owner()`, the ERC-1967 implementation, admin and beacon slots, each ProxyAdmin's owner, `hasRole` for every holder found, each Safe's threshold, signers, modules and transaction guard, each EIP-2535 Diamond's facets, each timelock's delay, and AccessManager roles and function guards. Run on a fork of the live chain, it fails and names what changed:
 
 ```bash
 ownerwatch probe --foundry --rpc "$RPC" 0xYourProxy 0xYourSafe > test/AdminSurface.t.sol
