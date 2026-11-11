@@ -22,6 +22,9 @@ from .events import _norm, topic0
 IMPL_SLOT = int("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", 16)
 ADMIN_SLOT = int("0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103", 16)
 BEACON_SLOT = int("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50", 16)
+# Gnosis Safe 1.3.0+ transaction guard, keccak256("guard_manager.guard.address"): a guard's checkTransaction/
+# checkAfterExecution run on every Safe transaction and can revert any of them, so it is a control vector.
+SAFE_GUARD_SLOT = int("0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8", 16)
 # Older layouts still in use: ZeppelinOS (USDC among others) and EIP-1822 UUPS drafts
 LEGACY_IMPL_SLOTS = (int.from_bytes(Web3.keccak(text="org.zeppelinos.proxy.implementation"), "big"),
                      int.from_bytes(Web3.keccak(text="PROXIABLE"), "big"))
@@ -242,6 +245,7 @@ class Node:
     safe_threshold: int | None = None
     safe_owners: list[str] = field(default_factory=list)
     safe_modules: list[str] = field(default_factory=list)   # modules execute without the signers
+    safe_guard: str | None = None       # Safe transaction guard: runs on every tx and can revert it
     delay: int | None = None
     paused: bool | None = None
     roles: dict[str, list[str]] = field(default_factory=dict)   # role name -> holders found among probed addresses
@@ -1140,6 +1144,10 @@ class Prober:
             n.safe_owners = [Web3.to_checksum_address("0x" + owners[64 + 32 * i + 12: 64 + 32 * i + 32].hex())
                              for i in range(count)]
             n.safe_modules = self._safe_modules(address)
+            n.safe_guard = self._slot_addr(address, SAFE_GUARD_SLOT)
+            if n.safe_guard:
+                n.notes.append(f"Safe transaction guard {n.safe_guard}: it runs on every Safe transaction and can revert "
+                               "any of them (a policy or veto layer; a compromised guard can block all Safe activity)")
             if thr == 1:
                 n.notes.append("1-of-N Safe: a single owner can act")
             elif thr * 2 < count:
@@ -1374,8 +1382,9 @@ def fact_lines(prober: Prober, chain_name: str) -> list[str]:
                                       ("owner", n.owner), ("pending_owner", n.pending_owner), ("admin", n.admin), ("clone_of", n.clone_of),
                                       ("authority", n.authority), ("kernel", n.kernel), ("authorizer", n.authorizer), ("dao", n.dao),
                                       ("emergency", n.emergency), ("delegate", n.delegate), ("threshold", n.safe_threshold),
-                                      ("delay", n.delay)) if v is not None]
+                                      ("guard", n.safe_guard), ("delay", n.delay)) if v is not None]
         pairs += [("signer", a) for a in n.safe_owners] + [("module", a) for a in n.safe_modules] + [("ward", a) for a in n.wards]
+        pairs += [("facet", a) for a in n.facets]
         if n.paused:
             pairs.append(("paused", "true"))
         if n.open_executor:

@@ -13,8 +13,8 @@ from web3 import Web3
 
 from . import __version__
 from .alerts import redact
-from .probe import (ADMIN_SLOT, AM_PUBLIC_ROLE, BEACON_SLOT, IMPL_SLOT, LEGACY_ADMIN_SLOT, LEGACY_IMPL_SLOTS, ROLES, ZERO, Node,
-                    Prober, _clone_target, _pad, _sel)
+from .probe import (ADMIN_SLOT, AM_PUBLIC_ROLE, BEACON_SLOT, IMPL_SLOT, LEGACY_ADMIN_SLOT, LEGACY_IMPL_SLOTS, ROLES,
+                    SAFE_GUARD_SLOT, ZERO, Node, Prober, _clone_target, _pad, _sel)
 
 RPC_ENV = "OWNERWATCH_RPC_URL"
 # (slot, Solidity constant, label); only the ERC-1967 three are pinned when empty, on proxies
@@ -302,6 +302,12 @@ class _Writer:
                              [arg_addr(SAFE_SENTINEL), arg_uint(50, "uint256")], expect=n.safe_modules)
         if mods is not None and len(mods) >= 50:
             t.gaps.append("modules past the first 50: the probe reads one page of 50")
+        if n.safe_guard:
+            w = self.pin_slot(t, n.address, SAFE_GUARD_SLOT,
+                              "0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8",
+                              "Safe transaction guard (guard_manager.guard.address slot)")
+            if w == int(n.safe_guard, 16):
+                t.done.add("safe_guard")
 
     def _delay(self, t: _Test) -> None:
         n = t.n
@@ -456,6 +462,7 @@ class _Writer:
                                                               "safe_threshold", "delay", "paused", "open_executor")}
         facts["safe_owners"] = n.safe_owners or None
         facts["safe_modules"] = n.safe_modules or None
+        facts["safe_guard"] = n.safe_guard
         facts["facets"] = n.facets or None
         if n.admin and n.admin == n.proxy_admin:
             facts.pop("admin")    # the same address as the upgrade admin, pinned there

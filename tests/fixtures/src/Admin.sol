@@ -510,3 +510,21 @@ contract DiamondLike {
     }
     function transferOwnership(address n) external { require(msg.sender == owner, "owner"); owner = n; }
 }
+
+/// A Gnosis-Safe-like contract with a transaction guard set at the Safe 1.3.0 guard slot
+/// (keccak256("guard_manager.guard.address")). The probe must read and report the guard: it runs on
+/// every Safe transaction and can revert any of them, a control vector no owner/module read reveals.
+contract SafeWithGuardLike {
+    address[] private _owners;
+    constructor() {
+        _owners.push(msg.sender);
+        bytes32 slot = 0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
+        address guard = 0x1111111111111111111111111111111111111111;
+        assembly { sstore(slot, guard) }
+    }
+    function getThreshold() external pure returns (uint256) { return 1; }
+    function getOwners() external view returns (address[] memory) { return _owners; }
+    function getModulesPaginated(address, uint256) external pure returns (address[] memory m, address next) {
+        m = new address[](0); next = address(0x1);
+    }
+}
