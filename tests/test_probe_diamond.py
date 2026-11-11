@@ -52,6 +52,21 @@ def test_diamond_disclosure_drafts_and_checks_clean(anvil, artifacts):  # noqa: 
     assert report["undisclosed"] == []
 
 
+def test_foundry_pins_the_facets(anvil, artifacts):  # noqa: F811
+    """`probe --foundry`: the drift test pins facetAddresses(), so a diamondCut that swaps a facet
+    fails it -- the only self-contained check that catches a facet-level code upgrade."""
+    from ownerwatch.foundry import foundry_test
+    w3 = anvil
+    diamond = _deploy(w3, *artifacts["DiamondLike"])
+    p = Prober(w3)
+    root = p.probe(diamond.address)
+    assert root.diamond is True and len(root.facets) == 2
+    src = foundry_test(p, "ethereum", w3.eth.block_number, [root])
+    assert 'abi.encodeWithSignature("facetAddresses()")' in src and "_list(" in src
+    for facet in root.facets:
+        assert facet in src
+
+
 def test_diamondcut_gate_is_proven(anvil, artifacts):  # noqa: F811
     """`probe --prove`: an empty diamondCut([],0x0,"") succeeds from owner() and reverts from a stranger,
     proving the diamondCut gate rather than assuming the reference-implementation owner restriction."""

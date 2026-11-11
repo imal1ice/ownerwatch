@@ -187,6 +187,8 @@ class _Writer:
         self._getters(t)
         if n.kind == "safe":
             self._safe(t)
+        if n.diamond:
+            self._diamond(t)
         self._delay(t)
         self._access_control(t)
         if n.kind == "access-manager":
@@ -284,6 +286,13 @@ class _Writer:
                 role, who = int(m.group(1)), Web3.to_checksum_address(m.group(2))
                 self.pin(t, f"pending {role} {who}", n.address, "getAccess(uint64,address)", "uint", None,
                          [arg_uint(role, "uint64"), arg_addr(who)], label=f"getAccess({role}, {who}) (pending grant: takes effect at)")
+
+    def _diamond(self, t: _Test) -> None:
+        """Pin an EIP-2535 Diamond's facet set: facetAddresses() must return the same facets. A diamondCut
+        that adds, removes or replaces a facet changes this list, so the drift test fails naming it -- the
+        only check that catches a facet-level code upgrade, which no ERC-1967 slot reveals."""
+        n = t.n
+        self.pin_list(t, "facets", n.address, "facetAddresses()", ["address[]"], expect=n.facets)
 
     def _safe(self, t: _Test) -> None:
         n = t.n
@@ -447,6 +456,7 @@ class _Writer:
                                                               "safe_threshold", "delay", "paused", "open_executor")}
         facts["safe_owners"] = n.safe_owners or None
         facts["safe_modules"] = n.safe_modules or None
+        facts["facets"] = n.facets or None
         if n.admin and n.admin == n.proxy_admin:
             facts.pop("admin")    # the same address as the upgrade admin, pinned there
         facts.update({f"named {k}": v for k, v in n.named.items()})

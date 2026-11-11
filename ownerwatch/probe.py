@@ -234,6 +234,7 @@ class Node:
     beacon: str | None = None
     diamond: bool = False               # EIP-2535 Diamond: upgradeable by replacing facets via diamondCut (no ERC-1967 slot)
     facet_count: int = 0                # number of facets on a Diamond
+    facets: list[str] = field(default_factory=list)   # the Diamond's facet addresses (facetAddresses())
     owner: str | None = None
     pending_owner: str | None = None
     admin: str | None = None
@@ -1073,8 +1074,8 @@ class Prober:
             return []
         return [Web3.to_checksum_address(m) for m in modules]
 
-    def _diamond_facets(self, address: str) -> int | None:
-        """EIP-2535 Diamond detection. Returns the facet count if `address` is a Diamond, else None.
+    def _diamond_facets(self, address: str) -> list[str] | None:
+        """EIP-2535 Diamond detection. Returns the facet addresses if `address` is a Diamond, else None.
 
         A Diamond keeps its code in facets reachable through a single proxy and is upgraded by
         `diamondCut` replacing them -- an upgrade path the ERC-1967 implementation/admin/beacon slots
@@ -1091,12 +1092,13 @@ class Prober:
             return None
         if not facets:
             return None
+        addrs = [Web3.to_checksum_address(a) for a in facets]
         si = self._call_args(address, "supportsInterface(bytes4)", DIAMOND_LOUPE_ID + bytes(28))
         if si is not None and len(si) == 32 and int.from_bytes(si, "big") == 1:
-            return len(facets)
+            return addrs
         fa = self._call_args(address, "facetAddress(bytes4)", FACETS_SELECTOR + bytes(28))
         if fa and _word_addr(fa) and _word_addr(fa) != ZERO:
-            return len(facets)
+            return addrs
         return None
 
     def probe(self, address: str) -> Node:
@@ -1182,13 +1184,14 @@ class Prober:
         n.owner = self._addr(address, "owner()")
         n.pending_owner = self._addr(address, "pendingOwner()")
         if n.kind in ("proxy", "contract") and not n.implementation and not n.beacon:
-            fc = self._diamond_facets(address)
-            if fc is not None:
+            facets = self._diamond_facets(address)
+            if facets:
                 n.diamond = True
-                n.facet_count = fc
+                n.facets = facets
+                n.facet_count = len(facets)
                 if n.owner and not n.proxy_admin:
                     n.proxy_admin = n.owner   # diamondCut is gated to owner() in the EIP-2535 reference implementation
-                n.notes.append(f"EIP-2535 Diamond ({fc} facet{'s' if fc != 1 else ''}): code is upgradeable by replacing "
+                n.notes.append(f"EIP-2535 Diamond ({len(facets)} facet{'s' if len(facets) != 1 else ''}): code is upgradeable by replacing "
                                "facets via diamondCut; the reference implementation restricts diamondCut to owner() -- "
                                "confirm the gate for a non-standard diamond")
         if self._call(address, "appId()") is not None:
