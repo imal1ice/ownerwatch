@@ -1,6 +1,6 @@
 # Admin-surface review — report template
 
-This is the structure of an ownerwatch **admin-surface review**: a point-in-time map of who controls a protocol's funds, every privileged power proven by simulation, the gaps between the docs and the chain, and a ready monitoring config. It is meant to be filled from the tool's own output so two reviews read the same way. A worked example on a public, well-governed protocol: [examples/reviews/compound-iii-usdc.md](../examples/reviews/compound-iii-usdc.md).
+This is the structure of an ownerwatch **admin-surface review**: a point-in-time map of who controls a protocol's funds, every privileged power proven by simulation, the gaps between the docs and the chain, and a ready monitoring config. It is meant to be filled from the tool's own output so two reviews read the same way. Worked examples on public, well-governed protocols: [Compound III (upgradeable proxy)](../examples/reviews/compound-iii-usdc.md) and [Uniswap V3 (immutable Factory)](../examples/reviews/uniswap-v3-factory-ethereum.md) — two different control shapes.
 
 Every finding is **pinned to a block** and backed by an `eth_call` simulation — a privileged call that *succeeds from the holder and reverts from a stranger* proves the holder controls it. Facts are public on-chain state; a review of a team's private contracts stays confidential to that team.
 
