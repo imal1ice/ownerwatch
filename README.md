@@ -118,6 +118,7 @@ See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/doc
 - [Moving admin-event monitors off OpenZeppelin Defender](https://github.com/imal1ice/ownerwatch/blob/main/docs/migrate-from-defender.md): what maps, what does not, and OpenZeppelin's own recommended path
 - [Alert on Safe signer and threshold changes](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-signers.md)
 - [Check and monitor a Safe's transaction guard](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-guard.md): the veto layer that runs on every Safe transaction and that no owner or module read reveals
+- [Audit and monitor a Safe's modules](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-modules.md): the signer-free execution path that bypasses the threshold entirely, which no owner or guard read reveals
 - [Alert on proxy and beacon upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md)
 - [Alert on role grants: AccessControl and AccessManager](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-role-grants.md)
 - [See scheduled timelock calls before they run](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md)
