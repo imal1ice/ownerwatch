@@ -8,6 +8,10 @@ I am an independent developer based in a sanctioned jurisdiction (a comprehensiv
 
 A written control-surface review of one EVM deployment: every owner, proxy and upgrade admin, role holder and Safe signer in the control graph, replayed from logs; each privileged power proven by an `eth_call` simulation at a pinned block; the findings, the fixes, and a ready-to-run ownerwatch monitoring config. It is the deliverable described in [docs/review-template.md](review-template.md), on the contract you choose. Delivered within 48 hours of payment. A clean result (nothing centralised found) is a valid outcome and is delivered as such.
 
+## If your protocol is an EIP-2535 diamond
+
+A diamond upgrades its code through `diamondCut`, not through an ERC-1967 implementation slot — so most control tools read a diamond as *immutable* and show nothing to review, even though its facets can be swapped. This review resolves the part they miss: **who can call `diamondCut`** — a single EOA, a Safe (and at what threshold), or an address behind a timelock — proven by an `eth_call` simulation at a pinned block (the cut succeeds from the gate and reverts from a stranger), plus the full facet set and the control graph above the gate. In one deliverable you get exactly who can replace your facets, with what delay, shown on-chain. Same price, same 48 hours; name the diamond as the `target`.
+
 ## Price
 
 **$400 in USDC, one-time and flat.** No subscription, no invoice.
