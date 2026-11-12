@@ -117,6 +117,7 @@ See [docs/what-to-watch.md](https://github.com/imal1ice/ownerwatch/blob/main/doc
 - [ERC-8241 in practice: field notes from disclosing four protocols](https://github.com/imal1ice/ownerwatch/blob/main/docs/erc-8241-field-notes.md): what the standard captures across roles, proxies, ownership chains and immutable multisigs, the traps, and what makes a disclosure falsifiable
 - [Moving admin-event monitors off OpenZeppelin Defender](https://github.com/imal1ice/ownerwatch/blob/main/docs/migrate-from-defender.md): what maps, what does not, and OpenZeppelin's own recommended path
 - [Alert on Safe signer and threshold changes](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-signers.md)
+- [Check and monitor a Safe's transaction guard](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-safe-guard.md): the veto layer that runs on every Safe transaction and that no owner or module read reveals
 - [Alert on proxy and beacon upgrades](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-proxy-upgrades.md)
 - [Alert on role grants: AccessControl and AccessManager](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-role-grants.md)
 - [See scheduled timelock calls before they run](https://github.com/imal1ice/ownerwatch/blob/main/docs/monitor-timelock-queue.md)
